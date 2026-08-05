@@ -1,0 +1,190 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark light;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0c111d;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Design Tokens */
+  --primary: #1f4e79;
+  --primary-light: #2e75b6;
+  --accent: #f59e0b;
+  --bg-dark: #0c111d;
+  --glass: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --text-dim: #94a3b8;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  background: #0c111d;
+  background: radial-gradient(circle at top right, #1e293b, #0c111d);
+  overflow-x: hidden;
+  color: #fff;
+  width: 100vw;
+}
+
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+}
+
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 2.5rem;
+}
+
+@media (max-width: 767px) {
+  .glass-card {
+    padding: 1.5rem;
+  }
+}
+
+h1 {
+  font-size: clamp(1.6rem, 7vw, 3.2rem);
+  line-height: 1.2;
+  background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.5rem;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: clamp(0.85rem, 3.5vw, 1.1rem);
+  margin-bottom: 2rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Modern responsive grid */
+.grid-2 {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 1.5rem;
+}
+
+.mobile-only {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  .grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  .mobile-only {
+    display: block !important;
+  }
+  
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* Optimize touch targets for mobile */
+  input, select, button, textarea {
+    font-size: 16px !important; /* Prevents auto-zoom on iOS */
+    min-height: 48px; /* Better finger-tap area */
+  }
+
+.do-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .do-container {
+    flex-direction: column !important;
+    padding: 0 1rem !important;
+    gap: 1.5rem !important;
+  }
+}
+
+.mobile-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+  /* Make step navigation scrollable on mobile */
+  .steps-container {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex !important;
+    gap: 1rem;
+    scrollbar-width: none;
+  }
+  .steps-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .glass {
+    padding: 1.5rem !important;
+    border-radius: 12px !important;
+  }
+}
+
+/* Fix for invisible select options in some browsers */
+select option {
+  background-color: #1e293b;
+  color: #fff;
+}
+
+select:focus option {
+  color: #fff;
+}
