@@ -1328,15 +1328,6 @@ function AdminModule({ activeTab: externalTab }) {
                    </div>
                 </div>
 
-                {selectedApp.comment && (
-                  <div style={{ marginTop: '2rem' }}>
-                    <h4 style={{ color: '#3b82f6', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Applicant Comment</h4>
-                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem', borderRadius: '10px', fontSize: '0.9rem', color: '#fbbf24', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                      {selectedApp.comment}
-                    </div>
-                  </div>
-                )}
-
                <button 
             onClick={saveApprovalFlow}
             disabled={approvalFlowLoading}
@@ -1496,6 +1487,15 @@ function AdminModule({ activeTab: externalTab }) {
                     </div>
                   </div>
                </div>
+
+               {selectedApp.comment && (
+                 <div style={{ marginTop: '2rem' }}>
+                   <h4 style={{ color: '#3b82f6', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Applicant Comment</h4>
+                   <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem', borderRadius: '10px', fontSize: '0.9rem', color: '#fbbf24', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                     {selectedApp.comment}
+                   </div>
+                 </div>
+               )}
 
                <button 
                   onClick={() => setSelectedApp(null)}
