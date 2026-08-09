@@ -513,6 +513,13 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
               </div>
             </div>
  
+            {selectedApp.comment && (
+              <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: '14px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                <p style={{ margin: 0, color: '#fbbf24', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.5rem', fontWeight: 700 }}>Applicant Comment</p>
+                <p style={{ margin: 0, color: '#fbbf24', lineHeight: '1.5', fontSize: '0.95rem', whiteSpace: 'pre-wrap' }}>{selectedApp.comment}</p>
+              </div>
+            )}
+
             {(userRole === 'divisional_secretary' && selectedApp.status === 'pending_ds') || 
              (userRole === 'director' && selectedApp.status === 'pending_director') ? (
               <div style={{ 
