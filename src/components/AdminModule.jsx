@@ -222,6 +222,13 @@ function AdminModule({ activeTab: externalTab }) {
 
   const isPaid = (app) => app.status === 'completed' || app.procurementUpdate?.phase === 'Payment Disbursed';
 
+  const isQuotationImage = (item) => {
+    const src = item?.quotationUrl || item?.quotationData || '';
+    if (!src) return false;
+    if (src.startsWith('data:image/')) return true;
+    return /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(src.split('?')[0]);
+  };
+
   useEffect(() => {
     setCurrentPage(1);
   }, [recordSearch, divisionFilter, equipmentFilter, scoreSort, pageSize, activeSubTab]);
@@ -1471,14 +1478,32 @@ function AdminModule({ activeTab: externalTab }) {
                    </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '10px' }}>
                     {(selectedApp.equipment?.items || []).map((item, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-                        <span>
-                          {item.name} ({item.brand} {item.model}) x {item.qty}
-                          {(item.quotationUrl || item.quotationData) && (
-                            <a href={item.quotationUrl || item.quotationData} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', marginLeft: '10px', fontSize: '0.75rem' }}>[View Attachment]</a>
-                          )}
-                        </span>
-                        <span>LKR {(item.qty * item.unitPrice).toLocaleString()}</span>
+                      <div key={idx} style={{ fontSize: '0.85rem', marginBottom: '1.2rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>
+                            {item.name} ({item.brand} {item.model}) x {item.qty}
+                          </span>
+                          <span>LKR {(item.qty * item.unitPrice).toLocaleString()}</span>
+                        </div>
+                        {(item.quotationUrl || item.quotationData) && (
+                          <div style={{ marginTop: '0.6rem' }}>
+                            <a href={item.quotationUrl || item.quotationData} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', fontSize: '0.75rem' }}>[Open in new tab]</a>
+                            {isQuotationImage(item) ? (
+                              <div style={{ marginTop: '0.6rem', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '0.5rem' }}>
+                                <img 
+                                  src={item.quotationUrl || item.quotationData} 
+                                  alt={`${item.name} quotation`}
+                                  style={{ maxWidth: '100%', maxHeight: '260px', borderRadius: '6px', cursor: 'zoom-in', display: 'block' }}
+                                  onClick={() => window.open(item.quotationUrl || item.quotationData, '_blank')}
+                                />
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                Document attachment (PDF/other) — <a href={item.quotationUrl || item.quotationData} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6' }}>view</a>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                     <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem', display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}>
