@@ -78,36 +78,26 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
     }));
   };
 
-  const compressAndEncode = (file) => {
+  const uploadQuotationToStorage = (file, itemId) => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (e) => {
-        const img = new Image();
-        img.src = e.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const MAX_WIDTH = 1000;
-
-          if (width > MAX_WIDTH) {
-            height = Math.round((MAX_WIDTH / width) * height);
-            width = MAX_WIDTH;
+      if (!auth.currentUser) return reject(new Error('Not authenticated.'));
+      const safeName = (file.name || 'quotation').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `quotations/${auth.currentUser.uid}/${Date.now()}_${itemId}_${safeName}`;
+      const storageRef = ref(storage, path);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+      uploadTask.on(
+        'state_changed',
+        () => {},
+        reject,
+        async () => {
+          try {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          } catch (err) {
+            reject(err);
           }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          // Compress to JPEG (much smaller than PNG/Original)
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-          resolve(dataUrl);
-        };
-        img.onerror = reject;
-      };
-      reader.onerror = reject;
+        }
+      );
     });
   };
 
@@ -128,25 +118,24 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
     setSubmissionStatus('Initializing...');
 
     try {
-      setSubmissionStatus('Optimizing images...');
       const updatedItems = [];
       const items = formData.equipment.items || [];
       
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.quotationFile instanceof File) {
-          setSubmissionStatus(`Processing ${item.name}...`);
+          setSubmissionStatus(`Uploading ${item.name} quotation...`);
           try {
-            const compressedBase64 = await compressAndEncode(item.quotationFile);
+            const url = await uploadQuotationToStorage(item.quotationFile, item.id);
             updatedItems.push({ 
               ...item, 
-              quotationData: compressedBase64,
-              quotationUrl: null,
+              quotationUrl: url,
+              quotationData: null,
               quotationFile: null
             });
           } catch (err) {
-            console.error("Compression error:", err);
-            throw new Error(`Failed to process ${item.name}.`);
+            console.error("Upload error:", err);
+            throw new Error(`Failed to upload the quotation for ${item.name}. Please try again or use a smaller file.`);
           }
         } else {
           updatedItems.push({ ...item, quotationFile: null });
