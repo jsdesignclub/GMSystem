@@ -1,19 +1,19 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { Download, Filter, List } from 'lucide-react';
+import { Download, Filter, List, Package } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
+import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' };
 const tdStyle = { padding: '1.2rem 1.5rem' };
 const labelStyle = { display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: '#94a3b8' };
 const inputStyle = { width: '100%', padding: '0.8rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', boxSizing: 'border-box' };
 const selectStyle = { padding: '0.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' };
+const pageNavBtnStyle = { padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#94a3b8', fontWeight: 600, fontSize: '0.85rem' };
 const addBtnStyle = { background: 'linear-gradient(135deg, #1f4e79 0%, #2e75b6 100%)', color: '#fff', border: 'none', padding: '0.8rem 1.5rem', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, cursor: 'pointer' };
 const searchStyle = { width: '100%', padding: '1rem 1rem 1rem 3rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', outline: 'none' };
 const avatarStyle = { width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' };
@@ -73,7 +73,10 @@ function AdminModule({ activeTab: externalTab }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [recordSearch, setRecordSearch] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('all');
+  const [equipmentFilter, setEquipmentFilter] = useState('all');
   const [scoreSort, setScoreSort] = useState('desc'); 
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     fetchUsers();
@@ -98,45 +101,40 @@ function AdminModule({ activeTab: externalTab }) {
     const headers = [
       "No", "Application ID", "Applicant Name", "Business Name", "Phone", 
       "Address", "Divisional Secretariat", "GS Division", "Development Officer", 
-      "Equipment Requested", "Model No", "Brand", "Process Status", "Viability Score", "Total Asset Cost", "Approved Grant Amount"
+      "Equipment Requested", "Model No", "Brand", "Process Status", "Viability Score", "Total Asset Cost", "Approved Grant Amount", "Amount Paid"
     ];
-    
-    const csvData = dataToExport.map((app, i) => {
+
+    const rows = dataToExport.map((app, i) => {
       const equip = app.equipment?.items?.[0] || {};
       return [
         i + 1,
-        `"${app.id}"`,
-        `"${app.personal?.fullName || ''}"`,
-        `"${app.business?.businessName || ''}"`,
-        `"${app.personal?.phone || ''}"`,
-        `"${app.personal?.address || ''}"`,
-        `"${app.division || ''}"`,
-        `"${app.personal?.gsDivision || ''}"`,
-        `"${app.officer?.email || ''}"`,
-        `"${equip.name || ''}"`,
-        `"${equip.model || ''}"`,
-        `"${equip.brand || ''}"`,
-        `"${app.status === 'approved' ? 'Authorized' : app.status}"`,
+        app.id,
+        app.personal?.fullName || '',
+        app.business?.businessName || '',
+        app.personal?.phone || '',
+        app.personal?.address || '',
+        app.division || '',
+        app.personal?.gsDivision || '',
+        app.officer?.email || '',
+        equip.name || '',
+        equip.model || '',
+        equip.brand || '',
+        app.status === 'approved' ? 'Authorized' : app.status,
         app.score || 0,
         app.equipment?.totalGrant * 2 || 0,
-        app.equipment?.totalGrant || 0
+        app.equipment?.totalGrant || 0,
+        isPaid(app) ? (app.equipment?.totalGrant || 0) : 'Pending'
       ];
     });
 
-    let csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n"
-      + csvData.map(e => e.join(",")).join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV({
+      filename: `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.csv`,
+      headers,
+      rows
+    });
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
     const filtered = getFilteredRecords();
     const dataToExport = selectedIds.length > 0 
       ? filtered.filter(app => selectedIds.includes(app.id))
@@ -144,48 +142,38 @@ function AdminModule({ activeTab: externalTab }) {
 
     if (dataToExport.length === 0) return alert("No records to export");
 
+    const columns = ["#", "ID", "Name", "Business", "Phone", "Division", "GS Div", "DO", "Equipment", "Phase", "Score", "Total Cost", "Grant", "Amount Paid"];
+
+    const rows = dataToExport.map((app, i) => {
+      const equip = app.equipment?.items?.[0] || {};
+      return [
+        (i + 1).toString(),
+        app.id.substring(0, 6),
+        app.personal?.fullName || "N/A",
+        app.business?.businessName || "N/A",
+        app.personal?.phone || "-",
+        app.division || "-",
+        app.personal?.gsDivision || "-",
+        app.officer?.email?.split('@')[0] || "-",
+        equip.name || "-",
+        app.status === 'approved' ? 'Authorized' : app.status,
+        (app.score || 0).toString(),
+        (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
+        (app.equipment?.totalGrant || 0).toLocaleString(),
+        isPaid(app) ? `LKR ${(app.equipment?.totalGrant || 0).toLocaleString()}` : 'Pending'
+      ];
+    });
+
     try {
-      const doc = new jsPDF('l', 'mm', 'a3'); 
-      
-      doc.setFontSize(22);
-      doc.setTextColor(31, 78, 121);
-      doc.text(`SME Grant System - ${activeSubTab === 'dispatch' ? 'Final Dispatch List' : 'Master Records'}`, 14, 22);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`District/Province: Uva Provincial Government`, 14, 28);
-      doc.text(`Report Date: ${new Date().toLocaleString()}`, 14, 33);
-      doc.text(`Record Count: ${dataToExport.length} Applications`, 14, 38);
-
-      const tableData = dataToExport.map((app, i) => {
-        const equip = app.equipment?.items?.[0] || {};
-        return [
-          (i + 1).toString(),
-          app.id.substring(0,6),
-          app.personal?.fullName || "N/A",
-          app.business?.businessName || "N/A",
-          app.personal?.phone || "-",
-          app.division || "-",
-          app.personal?.gsDivision || "-",
-          app.officer?.email?.split('@')[0] || "-",
-          equip.name || "-",
-          app.status === 'approved' ? 'Authorized' : app.status,
-          (app.score || 0).toString(),
-          (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
-          (app.equipment?.totalGrant || 0).toLocaleString()
-        ];
+      await exportTablePDF({
+        title: `SME Grant System - ${activeSubTab === 'dispatch' ? 'Final Dispatch List' : 'Master Records'}`,
+        subtitle: `District/Province: Uva Provincial Government | Report Date: ${new Date().toLocaleString()}`,
+        columns,
+        rows,
+        filename: `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.pdf`,
+        orientation: 'landscape',
+        format: 'a3'
       });
-
-      autoTable(doc, {
-        startY: 45,
-        head: [["#", "ID", "Name", "Business", "Phone", "Division", "GS Div", "DO", "Equipment", "Phase", "Score", "Total Cost", "Grant"]],
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [31, 78, 121], textColor: [255, 255, 255], fontSize: 8 },
-        styles: { fontSize: 7, cellPadding: 2 }
-      });
-
-      doc.save(`${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
       alert("Error generating PDF.");
@@ -204,8 +192,11 @@ function AdminModule({ activeTab: externalTab }) {
         (app.id || "").toLowerCase().includes(search);
       
       const matchesDivision = divisionFilter === 'all' || app.division === divisionFilter;
-      
-      return matchesSearch && matchesDivision;
+
+      const items = app.equipment?.items || [];
+      const matchesEquipment = equipmentFilter === 'all' || items.some(i => i.name === equipmentFilter);
+
+      return matchesSearch && matchesDivision && matchesEquipment;
     });
 
     // Apply Sorting
@@ -217,6 +208,24 @@ function AdminModule({ activeTab: externalTab }) {
 
     return filtered;
   };
+
+  const filteredRecords = getFilteredRecords();
+  const pageSizeNumber = pageSize === 'all' ? filteredRecords.length : pageSize;
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / (pageSizeNumber || 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = pageSize === 'all' ? 0 : (safePage - 1) * pageSizeNumber;
+  const pageRecords = pageSize === 'all' ? filteredRecords : filteredRecords.slice(pageStart, pageStart + pageSizeNumber);
+
+  const uniqueEquipment = [...new Set(
+    [...dispatchQueue, ...approvedApps].flatMap(app => (app.equipment?.items || []).map(i => i.name)).filter(Boolean)
+  )].sort();
+
+  const isPaid = (app) => app.status === 'completed' || app.procurementUpdate?.phase === 'Payment Disbursed';
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [recordSearch, divisionFilter, equipmentFilter, scoreSort, pageSize, activeSubTab]);
+
 
   // Sync with external sidebar tab
   useEffect(() => {
@@ -681,6 +690,18 @@ function AdminModule({ activeTab: externalTab }) {
                    {divisions.map(d => <option key={d} value={d}>{d}</option>)}
                  </select>
                </div>
+
+               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: '220px' }}>
+                 <Package size={18} color="#94a3b8" />
+                 <select 
+                   value={equipmentFilter} 
+                   onChange={e => setEquipmentFilter(e.target.value)}
+                   style={{ ...selectStyle, width: '100%', height: '45px' }}
+                 >
+                   <option value="all">All Equipment</option>
+                   {uniqueEquipment.map(e => <option key={e} value={e}>{e}</option>)}
+                 </select>
+               </div>
                
                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: '180px' }}>
                  <ArrowUpDown size={18} color="#94a3b8" />
@@ -721,11 +742,12 @@ function AdminModule({ activeTab: externalTab }) {
                   <th style={thStyle}>Score</th>
                   <th style={thStyle}>Total Cost</th>
                   <th style={thStyle}>Grant</th>
+                  <th style={thStyle}>Amount Paid</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {getFilteredRecords().map((app, idx) => {
+                {pageRecords.map((app, idx) => {
                   const firstItem = app.equipment?.items?.[0] || {};
                   return (
                     <tr key={app.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }} className="row-hover">
@@ -736,7 +758,7 @@ function AdminModule({ activeTab: externalTab }) {
                            onChange={() => toggleSelect(app.id)} 
                          />
                       </td>
-                      <td style={tdStyle}>{idx + 1}</td>
+                      <td style={tdStyle}>{pageStart + idx + 1}</td>
                       <td style={tdStyle}><code style={{ fontSize: '0.75rem', color: '#3b82f6' }}>{app.id.substring(0, 8)}</code></td>
                       <td style={tdStyle}><div style={{ fontWeight: 600 }}>{app.personal?.fullName}</div></td>
                       <td style={tdStyle}>{app.business?.businessName}</td>
@@ -765,6 +787,13 @@ function AdminModule({ activeTab: externalTab }) {
                       <td style={tdStyle}>LKR {(app.equipment?.totalGrant * 2 || 0).toLocaleString()}</td>
                       <td style={tdStyle}><div style={{ fontWeight: 800, color: '#10b981' }}>LKR {(app.equipment?.totalGrant || 0).toLocaleString()}</div></td>
                       <td style={tdStyle}>
+                        {isPaid(app) ? (
+                          <span style={{ fontWeight: 800, color: '#10b981' }}>LKR {(app.equipment?.totalGrant || 0).toLocaleString()}</span>
+                        ) : (
+                          <span style={{ fontWeight: 600, color: '#f59e0b' }}>Pending</span>
+                        )}
+                      </td>
+                      <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button 
                             onClick={() => setSelectedApp(app)}
@@ -787,6 +816,67 @@ function AdminModule({ activeTab: externalTab }) {
                 })}
               </tbody>
             </table>
+
+            {filteredRecords.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#94a3b8', fontSize: '0.85rem', flexWrap: 'wrap' }}>
+                  <span>Show</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    style={selectStyle}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value="all">All</option>
+                  </select>
+                  <span>records</span>
+                  <span style={{ marginLeft: '1rem', color: '#64748b' }}>
+                    Showing {pageRecords.length === 0 ? 0 : pageStart + 1}–{pageStart + pageRecords.length} of {filteredRecords.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    style={{ ...pageNavBtnStyle, opacity: safePage <= 1 ? 0.4 : 1, cursor: safePage <= 1 ? 'not-allowed' : 'pointer' }}
+                  >
+                    Prev
+                  </button>
+                  {totalPages <= 7 ? (
+                    Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        style={{
+                          minWidth: '34px',
+                          height: '34px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: p === safePage ? '#1f4e79' : 'rgba(255,255,255,0.04)',
+                          color: p === safePage ? '#fff' : '#94a3b8',
+                          fontWeight: p === safePage ? 700 : 400,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))
+                  ) : (
+                    <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Page {safePage} of {totalPages}</span>
+                  )}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    style={{ ...pageNavBtnStyle, opacity: safePage >= totalPages ? 0.4 : 1, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
 
             {getFilteredRecords().length === 0 && !appsLoading && (
               <div style={{ padding: '6rem 2rem', textAlign: 'center', color: '#64748b', background: 'rgba(255,255,255,0.01)', borderRadius: '15px' }}>
@@ -1053,10 +1143,10 @@ function AdminModule({ activeTab: externalTab }) {
                 <div style={{ marginBottom: '0.5rem' }}>
                    <label style={{ fontSize: '0.8rem', opacity: 0.7 }}>Job Creation (Excl. Owner)</label>
                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.3rem' }}>
-                     <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', opacity: 0.5 }}>1–5 Employees</label>
+                     <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', opacity: 0.5 }}>1â€“5 Employees</label>
                        <input type="number" style={inputStyle} value={scoringPolicy.economicContribution.emp1to5} onChange={e => setScoringPolicy({...scoringPolicy, economicContribution: {...scoringPolicy.economicContribution, emp1to5: Number(e.target.value)}})} />
                      </div>
-                     <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', opacity: 0.5 }}>5–7 Employees</label>
+                     <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', opacity: 0.5 }}>5â€“7 Employees</label>
                        <input type="number" style={inputStyle} value={scoringPolicy.economicContribution.emp5to7} onChange={e => setScoringPolicy({...scoringPolicy, economicContribution: {...scoringPolicy.economicContribution, emp5to7: Number(e.target.value)}})} />
                      </div>
                      <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', opacity: 0.5 }}>7+ Employees</label>
@@ -1153,7 +1243,7 @@ function AdminModule({ activeTab: externalTab }) {
                       {filtered.map((app, idx) => {
                         return (
                           <tr key={app.id} onClick={() => setSelectedApp(app)} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s', cursor: 'pointer' }} className="row-hover">
-                            <td style={tdStyle}>{idx + 1}</td>
+                      <td style={tdStyle}>{idx + 1}</td>
                             <td style={tdStyle}><code style={{ fontSize: '0.75rem', color: '#3b82f6' }}>{app.id.substring(0, 8)}</code></td>
                             <td style={tdStyle}>{app.personal?.fullName || 'N/A'}</td>
                             <td style={tdStyle}>{app.business?.businessName || 'N/A'}</td>
@@ -1235,10 +1325,19 @@ function AdminModule({ activeTab: externalTab }) {
                   transition: 'left 0.2s'
                 }} />
               </button>
-            </div>
-          </div>
+                   </div>
+                </div>
 
-          <button
+                {selectedApp.comment && (
+                  <div style={{ marginTop: '2rem' }}>
+                    <h4 style={{ color: '#3b82f6', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Applicant Comment</h4>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem', borderRadius: '10px', fontSize: '0.9rem', color: '#fbbf24', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                      {selectedApp.comment}
+                    </div>
+                  </div>
+                )}
+
+               <button 
             onClick={saveApprovalFlow}
             disabled={approvalFlowLoading}
             style={{

@@ -3,8 +3,7 @@ import { db, auth } from '../firebase';
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { FileText, CheckCircle, Package, Eye, Search, Clock, DollarSign, Download, Truck, Printer, Filter, ArrowUpDown, X, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' };
 const tdStyle = { padding: '1.2rem 1.5rem', fontSize: '0.9rem' };
@@ -132,51 +131,42 @@ function AccountantModule({ statusFilter = 'approved' }) {
       "No", "ID", "Name", "Business", "Phone", "Division", "DO", "Item", "Model", "Brand", "Cost", "Grant"
     ];
     
-    const csvData = filtered.map((app, i) => {
+    const rows = filtered.map((app, i) => {
       const equip = app.equipment?.items?.[0] || {};
       return [
         i + 1,
-        `"${app.id.substring(0,8)}"`,
-        `"${app.personal?.fullName || ''}"`,
-        `"${app.business?.businessName || ''}"`,
-        `"${app.personal?.phone || ''}"`,
-        `"${app.division || ''}"`,
-        `"${app.officer?.email || ''}"`,
-        `"${equip.name || ''}"`,
-        `"${equip.model || ''}"`,
-        `"${equip.brand || ''}"`,
+        app.id.substring(0, 8),
+        app.personal?.fullName || '',
+        app.business?.businessName || '',
+        app.personal?.phone || '',
+        app.division || '',
+        app.officer?.email || '',
+        equip.name || '',
+        equip.model || '',
+        equip.brand || '',
         app.equipment?.totalGrant * 2 || 0,
         app.equipment?.totalGrant || 0
       ];
     });
 
-    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + csvData.map(e => e.join(",")).join("\n");
-    const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `accountant_report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV({
+      filename: `accountant_report_${new Date().toISOString().split('T')[0]}.csv`,
+      headers,
+      rows
+    });
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
     const filtered = getFilteredRecords();
     if (filtered.length === 0) return alert("No records to export");
 
-    const doc = new jsPDF('l', 'mm', 'a3');
-    doc.setFontSize(22);
-    doc.setTextColor(31, 78, 121);
-    doc.text("Procurement & Payment Authorization Registry", 14, 22);
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Report Type: ${statusFilter.toUpperCase()}`, 14, 30);
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 35);
+    const columns = ["#", "ID", "Applicant", "Business", "Division", "Item", "Model", "Brand", "Score", "Total Cost", "Grant Amount"];
 
-    const tableData = filtered.map((app, i) => {
+    const rows = filtered.map((app, i) => {
       const equip = app.equipment?.items?.[0] || {};
       return [
         (i + 1).toString(),
-        app.id.substring(0,8),
+        app.id.substring(0, 8),
         app.personal?.fullName || "N/A",
         app.business?.businessName || "N/A",
         app.division || "-",
@@ -189,16 +179,20 @@ function AccountantModule({ statusFilter = 'approved' }) {
       ];
     });
 
-    autoTable(doc, {
-      startY: 45,
-      head: [["#", "ID", "Applicant", "Business", "Division", "Item", "Model", "Brand", "Score", "Total Cost", "Grant Amount"]],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [31, 78, 121], textColor: [255, 255, 255], fontSize: 8 },
-      styles: { fontSize: 7 }
-    });
-
-    doc.save(`accountant_procurement_${new Date().toISOString().split('T')[0]}.pdf`);
+    try {
+      await exportTablePDF({
+        title: 'Procurement & Payment Authorization Registry',
+        subtitle: `Report Type: ${statusFilter.toUpperCase()} | Generated on: ${new Date().toLocaleString()}`,
+        columns,
+        rows,
+        filename: `accountant_procurement_${new Date().toISOString().split('T')[0]}.pdf`,
+        orientation: 'landscape',
+        format: 'a3'
+      });
+    } catch (err) {
+      console.error("PDF Export Error:", err);
+      alert("Error generating PDF.");
+    }
   };
 
   if (loading) return <div style={{ padding: '4rem', textAlign: 'center' }}><p>Loading procurement registry...</p></div>;

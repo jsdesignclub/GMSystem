@@ -205,6 +205,13 @@ function DirectorModule() {
                       <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.6' }}>{selectedApp.dsReview?.comments || "Recommended for approval based on eligibility scoring."}</p>
                       <p style={{ margin: '0.6rem 0 0', fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>Reviewed by: {selectedApp.dsReview?.reviewedBy}</p>
                     </div>
+
+                    {selectedApp.comment && (
+                      <div style={{ marginTop: '1.5rem', padding: '1.2rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.25)', marginBottom: '2rem' }}>
+                        <h4 style={{ margin: '0 0 0.8rem', fontSize: '0.75rem', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 700 }}>Applicant Comment</h4>
+                        <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.6', color: '#fbbf24', whiteSpace: 'pre-wrap' }}>{selectedApp.comment}</p>
+                      </div>
+                    )}
                   </div>
 
                   <div>

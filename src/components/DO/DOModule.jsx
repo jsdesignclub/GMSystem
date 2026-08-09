@@ -32,7 +32,8 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
     training: {},
     production: {},
     equipment: {},
-    history: {}
+    history: {},
+    comment: ''
   });
 
   // Auto-populate DS Division and District based on user's assigned division
@@ -196,6 +197,7 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
           email: auth.currentUser.email
         },
         dsReview: null,
+        comment: (formData.comment || '').trim(),
         lastUpdated: serverTimestamp(),
         createdAt: initialData ? (initialData.createdAt || serverTimestamp()) : serverTimestamp()
       };
@@ -254,6 +256,30 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
                   <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>{getTranslation('application.review.readyDescription', language)}</p>
                 </div>
               </div>
+            </div>
+
+            <div style={{ marginBottom: '2rem' }}>
+              <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.5rem' }}>
+                {getTranslation('application.review.commentLabel', language)}
+              </label>
+              <textarea
+                value={formData.comment || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, comment: e.target.value }))}
+                placeholder={getTranslation('application.review.commentPlaceholder', language)}
+                rows={4}
+                style={{
+                  width: '100%',
+                  padding: '1rem',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(0,0,0,0.2)',
+                  color: '#e2e8f0',
+                  fontSize: '0.95rem',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  outline: 'none'
+                }}
+              />
             </div>
 
             <button 

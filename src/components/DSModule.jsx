@@ -244,7 +244,16 @@ function DSModule() {
                     </div>
                   </div>
                 </div>
-                
+
+                {selectedApp.comment && (
+                  <div style={{ marginTop: '2rem' }}>
+                    <h5 style={{ ...sectionHeaderStyle, marginBottom: '0.75rem' }}>Applicant Comment</h5>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem', borderRadius: '10px', fontSize: '0.9rem', color: '#fbbf24', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                      {selectedApp.comment}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ 
                   marginTop: '2.5rem', 
                   paddingTop: '2rem', 

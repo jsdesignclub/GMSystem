@@ -79,6 +79,8 @@ const translations = {
         description: 'Please verify all entries before submitting to the Divisional Secretary. This action creates a permanent audit log.',
         readyTitle: 'Ready for Processing',
         readyDescription: 'All mandatory sections have been completed.',
+        commentLabel: 'Your Comment (Optional)',
+        commentPlaceholder: 'Add any additional information or notes about your application...',
         submit: 'SUBMIT APPLICATION'
       },
       personal: {
@@ -289,6 +291,8 @@ const translations = {
         description: 'අවසන්ට පෙර සියලු තොරතුරු පරීක්ෂා කර ප්‍රාදේශීය ලේකම් වෙත ඉදිරිපත් කරන්න. මෙම ක්‍රියාව තීරු හෝඩුවාවක් නිර්මාණය කරයි.',
         readyTitle: 'සකස් කිරීම සඳහා සූදානම්',
         readyDescription: 'සියලු අවශ්‍ය කොටස් සම්පූර්ණ කර ඇත.',
+        commentLabel: 'ඔබගේ අදහස (විකල්ප)',
+        commentPlaceholder: 'ඔබගේ අයදුම්පත පිළිබඳ අමතර තොරතුරු හෝ සටහන් එක් කරන්න...',
         submit: 'අයදුම්පත ඉදිරිපත් කරන්න'
       },
       personal: {
