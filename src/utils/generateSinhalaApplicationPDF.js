@@ -82,7 +82,7 @@ const si = {
     pending_ds: 'DS සමාලෝචනයට බලා සිටී',
     pending_director: 'අධ්\u200Dයක්ෂ සමාලෝචනයට බලා සිටී',
     approved: 'අනුමත කරන ලදී',
-    approved_by_director: 'අධ්\u200Dයක්ෂ විසින් අනුමත කරන ලදී',
+    approved_by_director: 'පොරොත්තුවෙන්',
     rejected: 'ප්\u200Dරතික්ෂේප කරන ලදී',
     ordered: 'ඇණවුම් කරන ලදී',
     completed: 'සම්පූර්ණයි'

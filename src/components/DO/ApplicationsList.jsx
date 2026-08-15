@@ -125,6 +125,11 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
 
   const handleDelete = async (e, appId) => {
     e.stopPropagation();
+    const target = applications.find(a => a.id === appId);
+    if (target && !['pending_ds', 'pending_director', 'approved_by_director'].includes(target.status)) {
+      alert('You can only delete applications that are still pending.');
+      return;
+    }
     if (window.confirm('Are you sure you want to delete this application? This action cannot be undone.')) {
       try {
         await deleteDoc(doc(db, 'applications', appId));
@@ -143,6 +148,8 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
         return <span style={{ ...badgeStyle, background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>DS Review</span>;
       case 'pending_director':
         return <span style={{ ...badgeStyle, background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>Director Review</span>;
+      case 'approved_by_director':
+        return <span style={{ ...badgeStyle, background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>Pending</span>;
       case 'approved':
         return <span style={{ ...badgeStyle, background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>Approved</span>;
       case 'rejected':
@@ -249,6 +256,10 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
                     <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
                       {app.business?.businessName}
                     </p>
+                    <p style={{ margin: '0.15rem 0 0', fontSize: '0.72rem', color: '#64748b' }}>
+                      DO: {(app.officer?.email || '').split('@')[0] || 'N/A'}
+                      {app.dsReview?.reviewedBy ? ` | DS: ${app.dsReview.reviewedBy.split('@')[0]}` : ''}
+                    </p>
                   </div>
                 </div>
                 
@@ -312,14 +323,25 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
                     </button>
                     
                     {normalizedRole === 'development_officer' && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); onEdit(app); }}
-                        style={{ ...iconBtnStyle, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', padding: '0.6rem 1rem', gap: '0.4rem' }}
-                        title="Edit Application"
-                      >
-                        <Edit3 size={18} />
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Edit</span>
-                      </button>
+                      <>
+                        {['pending_ds', 'pending_director', 'approved_by_director'].includes(app.status) && (
+                          <button 
+                            onClick={(e) => handleDelete(e, app.id)}
+                            style={{ ...iconBtnStyle, color: '#f43f5e', background: 'rgba(244, 63, 94, 0.1)' }}
+                            title="Delete Application"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onEdit(app); }}
+                          style={{ ...iconBtnStyle, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', padding: '0.6rem 1rem', gap: '0.4rem' }}
+                          title="Edit Application"
+                        >
+                          <Edit3 size={18} />
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Edit</span>
+                        </button>
+                      </>
                     )}
  
                     {normalizedRole === 'divisional_secretary' && app.status === 'pending_ds' && (

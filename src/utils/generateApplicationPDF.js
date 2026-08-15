@@ -58,7 +58,7 @@ export function generateApplicationPDF(app) {
       pending_ds: 'Pending DS Review',
       pending_director: 'Pending Director Review',
       approved: 'Approved',
-      approved_by_director: 'Approved by Director',
+      approved_by_director: 'Pending',
       rejected: 'Rejected',
       ordered: 'Ordered',
       completed: 'Completed'

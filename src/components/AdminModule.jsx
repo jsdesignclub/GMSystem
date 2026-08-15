@@ -771,7 +771,12 @@ function AdminModule({ activeTab: externalTab }) {
                       <td style={tdStyle}>{app.business?.businessName}</td>
                       <td style={tdStyle}>{app.personal?.phone}</td>
                       <td style={tdStyle}>{app.division}</td>
-                      <td style={tdStyle}><div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{app.officer?.email?.split('@')[0] || 'System'}</div></td>
+                      <td style={tdStyle}>
+                        <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{app.officer?.email?.split('@')[0] || 'System'}</div>
+                        {app.dsReview?.reviewedBy && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>DS: {app.dsReview.reviewedBy.split('@')[0]}</div>
+                        )}
+                      </td>
                       <td style={tdStyle}>{firstItem.name || 'N/A'}</td>
                       <td style={tdStyle}>
                         <div style={{ 
