@@ -127,6 +127,12 @@ function AdminModule({ activeTab: externalTab }) {
       ];
     });
 
+    rows.push([
+      '', '', '', '', '', '', '', '', '', '', '',
+      '', 'TOTAL', '',
+      totals.totalCost, totals.totalGrant, totals.totalPaid
+    ]);
+
     downloadCSV({
       filename: `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.csv`,
       headers,
@@ -170,6 +176,13 @@ function AdminModule({ activeTab: externalTab }) {
         subtitle: `District/Province: Uva Provincial Government | Report Date: ${new Date().toLocaleString()}`,
         columns,
         rows,
+        foot: [
+          '', '', '', '', '', '', '', '', '', '',
+          'TOTAL',
+          `LKR ${totals.totalCost.toLocaleString()}`,
+          `LKR ${totals.totalGrant.toLocaleString()}`,
+          `LKR ${totals.totalPaid.toLocaleString()}`
+        ],
         filename: `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.pdf`,
         orientation: 'landscape',
         format: 'a3'
@@ -221,6 +234,16 @@ function AdminModule({ activeTab: externalTab }) {
   )].sort();
 
   const isPaid = (app) => app.status === 'completed' || app.procurementUpdate?.phase === 'Payment Disbursed';
+
+  const exportSet = selectedIds.length > 0
+    ? filteredRecords.filter(app => selectedIds.includes(app.id))
+    : filteredRecords;
+  const totals = {
+    count: exportSet.length,
+    totalCost: exportSet.reduce((sum, app) => sum + (app.equipment?.totalGrant * 2 || 0), 0),
+    totalGrant: exportSet.reduce((sum, app) => sum + (app.equipment?.totalGrant || 0), 0),
+    totalPaid: exportSet.reduce((sum, app) => sum + (isPaid(app) ? (app.equipment?.totalGrant || 0) : 0), 0)
+  };
 
   const isQuotationImage = (item) => {
     const src = item?.quotationUrl || item?.quotationData || '';
@@ -827,6 +850,19 @@ function AdminModule({ activeTab: externalTab }) {
                   );
                 })}
               </tbody>
+              {filteredRecords.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: 'rgba(16, 185, 129, 0.06)', borderTop: '2px solid rgba(16, 185, 129, 0.25)' }}>
+                    <td colSpan={11} style={{ ...tdStyle, fontWeight: 800, color: '#10b981', textAlign: 'right', fontSize: '0.9rem' }}>
+                      TOTAL ({totals.count} Applications)
+                    </td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: '#fff', fontSize: '0.9rem' }}>LKR {totals.totalCost.toLocaleString()}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: '#10b981', fontSize: '0.9rem' }}>LKR {totals.totalGrant.toLocaleString()}</td>
+                    <td style={{ ...tdStyle, fontWeight: 800, color: '#10b981', fontSize: '0.9rem' }}>LKR {totals.totalPaid.toLocaleString()}</td>
+                    <td style={tdStyle}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
 
             {filteredRecords.length > 0 && (

@@ -32,7 +32,7 @@ export function exportCSV({ filename, headers, rows }) {
   URL.revokeObjectURL(url);
 }
 
-export async function exportTablePDF({ title, subtitle, columns, rows, filename, orientation = 'landscape', format = 'a3' }) {
+export async function exportTablePDF({ title, subtitle, columns, rows, foot, filename, orientation = 'landscape', format = 'a3' }) {
   const head = columns.map((c) => `<th>${esc(c)}</th>`).join('');
   const body = rows
     .map(
@@ -40,6 +40,9 @@ export async function exportTablePDF({ title, subtitle, columns, rows, filename,
         `<tr>${r.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr>`
     )
     .join('');
+  const footHtml = foot
+    ? `<tfoot><tr>${foot.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr></tfoot>`
+    : '';
   const footer = `Generated: ${new Date().toLocaleString()} | Records: ${rows.length}`;
 
   const C = document.createElement('div');
@@ -54,12 +57,13 @@ export async function exportTablePDF({ title, subtitle, columns, rows, filename,
       .expdf th { background: #1f4e79; color: #fff; font-weight: 700; padding: 7px 8px; text-align: left; border: 1px solid #cbd5e1; }
       .expdf td { padding: 6px 8px; border: 1px solid #cbd5e1; vertical-align: top; }
       .expdf tr:nth-child(even) td { background: #f7fafc; }
+      .expdf tfoot td { background: #e2e8f0; font-weight: 700; }
       .expdf .footer { margin-top: 12px; font-size: 11px; color: #718096; }
     </style>
     <div class="expdf">
       <h1>${esc(title)}</h1>
       <p class="sub">${esc(subtitle)}</p>
-      <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+      <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${footHtml}</table>
       <p class="footer">${esc(footer)}</p>
     </div>
   `;
