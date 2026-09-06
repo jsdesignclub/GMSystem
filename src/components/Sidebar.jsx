@@ -15,22 +15,36 @@ import {
   LogOut,
   X,
   Briefcase,
-  Shield
+  Shield,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
-function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole, language = 'en' }) {
+function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole, language = 'en', isCollapsed, onToggleCollapse }) {
   const normalizedRole = userRole?.toLowerCase();
-  const [expandedItems, setExpandedItems] = useState(['applications', 'approvals', 'final-actions', 'procurement', 'admin-tools']);
+  const [expandedItems, setExpandedItems] = useState(['applications', 'approvals', 'final-actions', 'procurement']);
   
   // Dynamic menu based on role
   const menuItems = normalizedRole === 'divisional_secretary' ? [
     { id: 'overview', title: getTranslation('sidebar.dsDashboard', language), icon: <Home size={20} /> },
-    { 
-      id: 'approvals', 
-      title: getTranslation('sidebar.approvals', language), 
+    {
+      id: 'approvals',
+      title: getTranslation('sidebar.approvals', language),
       icon: <CheckCircle size={20} />,
       subItems: [
         { id: 'approval-queue', title: getTranslation('sidebar.pendingActions', language), icon: <Clock size={16} /> },
+        { id: 'all-app', title: getTranslation('sidebar.processedRecords', language), icon: <List size={16} /> }
+      ]
+    },
+    { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }
+  ] : normalizedRole === 'grama_niladhari' ? [
+    { id: 'overview', title: getTranslation('sidebar.gnDashboard', language), icon: <Home size={20} /> },
+    {
+      id: 'approvals',
+      title: getTranslation('sidebar.approvals', language),
+      icon: <CheckCircle size={20} />,
+      subItems: [
+        { id: 'gs-approval-queue', title: getTranslation('sidebar.pendingActions', language), icon: <Clock size={16} /> },
         { id: 'all-app', title: getTranslation('sidebar.processedRecords', language), icon: <List size={16} /> }
       ]
     },
@@ -51,28 +65,34 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
     { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }
   ] : normalizedRole === 'admin' ? [
     { id: 'overview', title: getTranslation('sidebar.systemConsole', language), icon: <Home size={20} /> },
-    { id: 'admin-tools', title: getTranslation('sidebar.administration', language), icon: <Settings size={20} />, subItems: [
-      { id: 'users', title: getTranslation('sidebar.staffDirectory', language), icon: <PlusCircle size={16} /> },
-      { id: 'records', title: getTranslation('sidebar.masterRecords', language), icon: <FileText size={16} /> },
-      { id: 'sectors', title: getTranslation('sidebar.divisionalSectors', language), icon: <List size={16} /> },
-      { id: 'policy', title: getTranslation('sidebar.grantPolicy', language), icon: <Shield size={16} /> },
-      { id: 'scoring', title: getTranslation('sidebar.scoringEngine', language), icon: <Settings size={16} /> },
-      { id: 'scoring-board', title: getTranslation('sidebar.masterScoreBoard', language), icon: <List size={16} /> },
-      { id: 'approval-flow', title: getTranslation('sidebar.approvalFlow', language), icon: <Settings size={16} /> },
-      { id: 'dispatch', title: getTranslation('sidebar.dispatchControl', language), icon: <CheckCircle size={16} /> }
-    ]},
+    { id: 'users', title: getTranslation('sidebar.staffDirectory', language), icon: <PlusCircle size={20} /> },
+    { id: 'records', title: getTranslation('sidebar.masterRecords', language), icon: <FileText size={20} /> },
+    { id: 'sectors', title: getTranslation('sidebar.divisionalSectors', language), icon: <List size={20} /> },
+    { id: 'policy', title: getTranslation('sidebar.grantPolicy', language), icon: <Shield size={20} /> },
+    { id: 'scoring', title: getTranslation('sidebar.scoringEngine', language), icon: <Settings size={20} /> },
+    { id: 'scoring-board', title: getTranslation('sidebar.masterScoreBoard', language), icon: <List size={20} /> },
+    { id: 'approval-flow', title: getTranslation('sidebar.approvalFlow', language), icon: <Settings size={20} /> },
+    { id: 'dispatch', title: getTranslation('sidebar.dispatchControl', language), icon: <CheckCircle size={20} /> },
     { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }
   ] : [
     { id: 'overview', title: getTranslation('sidebar.overview', language), icon: <Home size={20} /> },
-    { 
-      id: 'applications', 
-      title: getTranslation('sidebar.applications', language), 
+    {
+      id: 'applications',
+      title: getTranslation('sidebar.applications', language),
       icon: <FileText size={20} />,
       subItems: [
         { id: 'new-app', title: getTranslation('sidebar.newApplication', language), icon: <PlusCircle size={16} /> },
         { id: 'pending-app', title: getTranslation('sidebar.pendingReview', language), icon: <Clock size={16} /> },
         { id: 'approved-app', title: getTranslation('sidebar.approvedGrants', language), icon: <CheckCircle size={16} /> },
         { id: 'all-app', title: getTranslation('sidebar.allRecords', language), icon: <List size={16} /> }
+      ]
+    },
+    {
+      id: 'approvals',
+      title: getTranslation('sidebar.approvals', language),
+      icon: <CheckCircle size={20} />,
+      subItems: [
+        { id: 'gs-approval-queue', title: getTranslation('sidebar.gnApprovalQueue', language), icon: <Clock size={16} /> }
       ]
     },
     { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }
@@ -112,26 +132,47 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
         initial={false}
         animate={{ 
           x: isOpen || !isMobile ? 0 : '-100%',
-          width: isMobile ? '280px' : '260px'
+          width: isMobile ? '280px' : (isCollapsed ? '70px' : '260px')
         }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         style={{
           height: isMobile ? '100dvh' : 'calc(100vh - 4rem)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '1.5rem',
+          padding: isCollapsed ? '1.5rem 0.5rem' : '1.5rem',
           position: isMobile ? 'fixed' : 'sticky',
           top: isMobile ? 0 : '2rem',
           left: isMobile ? 0 : 'auto',
           zIndex: 101,
-          textAlign: 'left'
+          textAlign: isCollapsed ? 'center' : 'left',
+          overflow: 'hidden'
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '0 0.5rem' }}>
-          <div>
-            <h2 style={{ fontSize: '1.4rem', margin: 0, color: '#fff' }}>{getTranslation('sidebar.smePortal', language)}</h2>
-            <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{getTranslation('sidebar.uvaGovt', language)}</span>
+          <div style={{ overflow: 'hidden', opacity: isCollapsed ? 0 : 1, width: isCollapsed ? 0 : 'auto', transition: 'opacity 0.2s' }}>
+            <h2 style={{ fontSize: '1.4rem', margin: 0, color: '#fff', whiteSpace: 'nowrap' }}>{getTranslation('sidebar.smePortal', language)}</h2>
+            <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>{getTranslation('sidebar.uvaGovt', language)}</span>
           </div>
+          {!isMobile && (
+            <button 
+              onClick={onToggleCollapse} 
+              style={{ 
+                background: 'transparent', 
+                border: '1px solid rgba(255,255,255,0.1)', 
+                color: '#94a3b8', 
+                cursor: 'pointer',
+                padding: '0.4rem',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+          )}
           {isMobile && (
             <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
               <X size={24} />
@@ -144,31 +185,37 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
           <div key={item.id}>
             <button
               onClick={() => item.subItems ? toggleExpand(item.id) : setActiveTab(item.id)}
+              title={isCollapsed ? item.title : undefined}
               style={{
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.8rem',
-                padding: '0.8rem',
+                padding: isCollapsed ? '0.8rem 0.5rem' : '0.8rem',
                 border: 'none',
                 borderRadius: '10px',
                 background: (activeTab === item.id && !item.subItems) ? 'rgba(31, 78, 121, 0.2)' : 'transparent',
                 color: (activeTab === item.id && !item.subItems) ? '#3b82f6' : '#94a3b8',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                fontWeight: (activeTab === item.id && !item.subItems) ? 600 : 400
+                fontWeight: (activeTab === item.id && !item.subItems) ? 600 : 400,
+                justifyContent: isCollapsed ? 'center' : 'flex-start'
               }}
             >
-              <span style={{ color: (activeTab === item.id && !item.subItems) ? '#3b82f6' : '#64748b' }}>
+              <span style={{ color: (activeTab === item.id && !item.subItems) ? '#3b82f6' : '#64748b', flexShrink: 0 }}>
                 {item.icon}
               </span>
-              <span style={{ flexGrow: 1 }}>{item.title}</span>
-              {item.subItems && (
-                expandedItems.includes(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+              {!isCollapsed && (
+                <>
+                  <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                  {item.subItems && (
+                    expandedItems.includes(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+                  )}
+                </>
               )}
             </button>
 
-            {item.subItems && (
+            {item.subItems && !isCollapsed && (
               <AnimatePresence>
                 {expandedItems.includes(item.id) && (
                   <motion.div
@@ -215,21 +262,23 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
       <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         <button
           onClick={onLogout}
+          title={isCollapsed ? getTranslation('sidebar.signOut', language) : undefined}
           style={{
             width: '100%',
             display: 'flex',
             alignItems: 'center',
             gap: '0.8rem',
-            padding: '0.8rem',
+            padding: isCollapsed ? '0.8rem 0.5rem' : '0.8rem',
             border: 'none',
             background: 'transparent',
             color: '#f87171',
             cursor: 'pointer',
-            fontSize: '0.9rem'
+            fontSize: '0.9rem',
+            justifyContent: isCollapsed ? 'center' : 'flex-start'
           }}
         >
           <LogOut size={20} />
-          {getTranslation('sidebar.signOut', language)}
+          {!isCollapsed && getTranslation('sidebar.signOut', language)}
         </button>
       </div>
     </motion.aside>

@@ -6,9 +6,11 @@ import { FileText, Clock, CheckCircle, AlertCircle, Eye, Search, Filter, Trash2,
 import { useAuth } from '../../context/AuthContext';
 import { generateApplicationPDF } from '../../utils/generateApplicationPDF';
 import { generateSinhalaApplicationPDF } from '../../utils/generateSinhalaApplicationPDF';
+import { calculateScore } from '../../utils/calculateScore';
+import { exportCSV, exportTablePDF } from '../../utils/exportUtils';
 
-function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
-  const { userRole, userDivision } = useAuth();
+function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false, language = 'en' }) {
+  const { userRole, userDivision, userGsDivision } = useAuth();
   const normalizedRole = userRole?.toLowerCase();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +31,18 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
             q = query(appRef, where('division', '==', userDivision));
           } else {
             q = query(appRef, where('division', '==', userDivision), where('status', '==', statusFilter));
+          }
+        } else if (normalizedRole === 'grama_niladhari') {
+          // GN only sees apps for their assigned GS division
+          if (!userGsDivision) {
+            setApplications([]);
+            setLoading(false);
+            return;
+          }
+          if (statusFilter === 'all') {
+            q = query(appRef, where('personal.gsDivision', '==', userGsDivision));
+          } else {
+            q = query(appRef, where('personal.gsDivision', '==', userGsDivision), where('status', '==', statusFilter));
           }
         } else if (normalizedRole === 'director') {
           // Director sees all applications
@@ -66,7 +80,7 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
     };
 
     fetchApplications();
-  }, [statusFilter]);
+  }, [statusFilter, normalizedRole, userDivision, userGsDivision]);
 
   const handleAction = async (e, appId, newStatus) => {
     e.stopPropagation();
@@ -75,7 +89,7 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
     
     try {
       let finalStatus = newStatus;
-      if (newStatus === 'approved' && normalizedRole === 'divisional_secretary') {
+      if (newStatus === 'approved' && (normalizedRole === 'divisional_secretary' || normalizedRole === 'grama_niladhari')) {
         finalStatus = 'pending_director';
         try {
           const flowSnap = await getDoc(doc(db, 'settings', 'approval_flow'));
@@ -93,7 +107,13 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
         lastUpdated: serverTimestamp()
       };
 
-      if (normalizedRole === 'divisional_secretary') {
+      if (normalizedRole === 'grama_niladhari') {
+        updateData.gnReview = {
+          reviewedBy: auth.currentUser.email,
+          reviewedAt: serverTimestamp(),
+          comments: reason
+        };
+      } else if (normalizedRole === 'divisional_secretary') {
         updateData.dsReview = {
           reviewedBy: auth.currentUser.email,
           reviewedAt: serverTimestamp(),
@@ -168,6 +188,95 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
     );
   });
 
+  const isPaid = (app) => app.status === 'completed' || app.procurementUpdate?.phase === 'Payment Disbursed';
+
+  const handleExportCSV = () => {
+    if (filteredApps.length === 0) return alert('No records to export');
+    const headers = [
+      'No', 'Applicant Name', 'NIC', 'Phone', 'Business Name', 'Division',
+      'GS Division', 'DO', 'Registration No', 'Trade License No', 'Equipment',
+      'Model No', 'Brand', 'Status', 'Score', 'Total Cost', 'Grant Amount', 'Amount Paid'
+    ];
+    const rows = filteredApps.map((app, i) => {
+      const item = app.equipment?.items?.[0] || {};
+      return [
+        (i + 1).toString(),
+        app.personal?.fullName || 'N/A',
+        app.personal?.nic || '-',
+        app.personal?.phone || '-',
+        app.business?.businessName || 'N/A',
+        app.division || '-',
+        app.personal?.gsDivision || '-',
+        (app.officer?.email || '').split('@')[0] || 'N/A',
+        app.business?.regNo || '-',
+        app.business?.licenseNo || '-',
+        item.name || 'N/A',
+        item.model || '-',
+        item.brand || '-',
+        app.status || '-',
+        (app.score || 0).toString(),
+        (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
+        (app.equipment?.totalGrant || 0).toLocaleString(),
+        isPaid(app) ? (app.equipment?.totalGrant || 0).toLocaleString() : 'Pending'
+      ];
+    });
+    exportCSV({
+      filename: `my_applications_${new Date().toISOString().split('T')[0]}.csv`,
+      headers,
+      rows
+    });
+  };
+
+  const handleExportPDF = async () => {
+    if (filteredApps.length === 0) return alert('No records to export');
+    const columns = ['#', 'Name', 'NIC', 'Phone', 'Business', 'Division', 'GS Div', 'DO', 'Equipment', 'Model No', 'Brand', 'Status', 'Score', 'Total Cost', 'Grant', 'Amount Paid'];
+    const rows = filteredApps.map((app, i) => {
+      const item = app.equipment?.items?.[0] || {};
+      return [
+        (i + 1).toString(),
+        app.personal?.fullName || 'N/A',
+        app.personal?.nic || '-',
+        app.personal?.phone || '-',
+        app.business?.businessName || 'N/A',
+        app.division || '-',
+        app.personal?.gsDivision || '-',
+        (app.officer?.email || '').split('@')[0] || 'N/A',
+        item.name || 'N/A',
+        item.model || '-',
+        item.brand || '-',
+        app.status || '-',
+        (app.score || 0).toString(),
+        (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
+        (app.equipment?.totalGrant || 0).toLocaleString(),
+        isPaid(app) ? `LKR ${(app.equipment?.totalGrant || 0).toLocaleString()}` : 'Pending'
+      ];
+    });
+    const totalCost = filteredApps.reduce((s, a) => s + (a.equipment?.totalGrant * 2 || 0), 0);
+    const totalGrant = filteredApps.reduce((s, a) => s + (a.equipment?.totalGrant || 0), 0);
+    const totalPaid = filteredApps.reduce((s, a) => s + (isPaid(a) ? (a.equipment?.totalGrant || 0) : 0), 0);
+    try {
+      await exportTablePDF({
+        title: 'SME Grant System - My Applications',
+        subtitle: 'Development Officer Records | Report Date: ' + new Date().toLocaleString(),
+        columns,
+        rows,
+        foot: [
+          '', '', '', '', '', '', '', '', '', '', '', '',
+          'TOTAL',
+          `LKR ${totalCost.toLocaleString()}`,
+          `LKR ${totalGrant.toLocaleString()}`,
+          `LKR ${totalPaid.toLocaleString()}`
+        ],
+        filename: `my_applications_${new Date().toISOString().split('T')[0]}.pdf`,
+        orientation: 'landscape',
+        format: 'a3'
+      });
+    } catch (err) {
+      console.error('PDF export error:', err);
+      alert('Error generating PDF.');
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ padding: isCompact ? '1rem' : '4rem', textAlign: 'center', color: '#64748b' }}>
@@ -222,15 +331,29 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
              'Track and manage applications across different stages.'}
           </p>
         </div>
-        <div style={{ position: 'relative', width: '100%', maxWidth: window.innerWidth < 768 ? '100%' : '300px' }}>
-          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} />
-          <input 
-            type="text" 
-            placeholder="Search by name or NIC..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...searchStyle, width: '100%' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'nowrap', marginLeft: 'auto' }}>
+          <div style={{ position: 'relative', flex: '1 1 180px', minWidth: '160px', maxWidth: '280px' }}>
+            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} />
+            <input 
+              type="text" 
+              placeholder="Search by name or NIC..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ ...searchStyle, width: '100%' }}
+            />
+          </div>
+          <button 
+            onClick={handleExportCSV}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '0.65rem 1rem', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            Export CSV
+          </button>
+          <button 
+            onClick={handleExportPDF}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '0.65rem 1rem', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            Export PDF
+          </button>
         </div>
       </div>
 
@@ -485,27 +608,82 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
                   <p><strong>NVQ Professional Level:</strong> {selectedApp.training?.nvqLevel || 'N/A'}</p>
                   <p><strong>Educational Degree:</strong> {selectedApp.training?.degree || 'N/A'}</p>
                   <p><strong>System Score:</strong> <span style={{ color: '#10b981', fontWeight: 800 }}>{selectedApp.score || 0} Points</span></p>
-                  {selectedApp.scoreBreakdown && (
-                    <div style={{ marginTop: '0.8rem', padding: '0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem', color: '#94a3b8' }}>
-                      <p style={{ margin: '0 0 0.4rem 0', fontWeight: 600, color: '#3b82f6' }}>Score Breakdown:</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.3rem' }}>
-                        <span>Business Stability & Growth:</span>
-                        <strong>{selectedApp.scoreBreakdown.businessStability || 0} / 25</strong>
-                        
-                        <span>Professional Competency:</span>
-                        <strong>{selectedApp.scoreBreakdown.professionalCompetency || 0} / 25</strong>
-                        
-                        <span>Household Status & Social:</span>
-                        <strong>{selectedApp.scoreBreakdown.householdStatus || 0} / 15</strong>
-                        
-                        <span>Economic Contribution:</span>
-                        <strong>{selectedApp.scoreBreakdown.economicContribution || 0} / 25</strong>
-                        
-                        <span>Special Awards & Recognition:</span>
-                        <strong>{selectedApp.scoreBreakdown.specialAwards || 0} / 10</strong>
+                  {(() => {
+                    const { detailed } = calculateScore(selectedApp);
+                    const si = language === 'si' || language === 'ta';
+                    const catLbl = {
+                      businessStability: si ? 'ව්‍යාපාර ස්ථාවරත්වය සහ වර්ධනය' : 'Business Stability & Growth',
+                      professionalCompetency: si ? 'වෘත්තීය නිපුණතාව' : 'Professional Competency',
+                      householdStatus: si ? 'ගෘහස්ථ තත්ත්වය සහ සමාජ' : 'Household Status & Social',
+                      economicContribution: si ? 'ආර්ථික දායකත්වය' : 'Economic Contribution',
+                      specialAwards: si ? 'විශේෂ සම්මාන සහ පිළිගැනීම්' : 'Special Awards & Recognition'
+                    };
+                    const itemLbl = {
+                      'Business Name & Reg': si ? 'ව්‍යාපාර නම සහ ලියාපදිංචිය' : 'Business Name & Reg',
+                      'Trade License': si ? 'වෙළඳ බලපත්‍රය' : 'Trade License',
+                      'Financial Discipline (Bookkeeping)': si ? 'මූල්‍ය විනය (ගිණුම් තබා ගැනීම)' : 'Financial Discipline (Bookkeeping)',
+                      'Education (NVQ 4 / Degree)': si ? 'අධ්‍යාපනය (NVQ 4 / උපාධිය)' : 'Education (NVQ 4 / Degree)',
+                      'Education (NVQ 3)': si ? 'අධ්‍යාපනය (NVQ 3)' : 'Education (NVQ 3)',
+                      'Industry Experience': si ? 'කර්මාන්ත පළපුරුද්ද' : 'Industry Experience',
+                      'Youth Entrepreneurship (< 35)': si ? 'තරුණ ව්‍යවසායකත්වය (< 35)' : 'Youth Entrepreneurship (< 35)',
+                      'Special Social Considerations': si ? 'විශේෂ සමාජ සලකා බැලීම්' : 'Special Social Considerations',
+                      'Monthly Income (Development Source)': si ? 'මාසික ආදායම (සංවර්ධන ප්‍රභවය)' : 'Monthly Income (Development Source)',
+                      'Job Creation': si ? 'රැකියා උත්පාදනය' : 'Job Creation',
+                      'Non-Traditional Industry': si ? 'සම්ප්‍රදායික නොවන කර්මාන්තය' : 'Non-Traditional Industry',
+                      'Product Quality/Certification': si ? 'නිෂ්පාදන ගුණාත්මකභාවය/සහතිකය' : 'Product Quality/Certification',
+                      'Regional Award': si ? 'ප්‍රාදේශීය සම්මානය' : 'Regional Award',
+                      'District Award': si ? 'දිස්ත්‍රික් සම්මානය' : 'District Award',
+                      'National Award': si ? 'ජාතික සම්මානය' : 'National Award'
+                    };
+                    return selectedApp.scoreBreakdown && (
+                      <div style={{ marginTop: '0.8rem', padding: '0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem', color: '#94a3b8' }}>
+                        <p style={{ margin: '0 0 0.4rem 0', fontWeight: 600, color: '#3b82f6' }}>{si ? 'සවිස්තරාත්මක ලකුණු විස්තරය:' : 'Detailed Score Breakdown:'}</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem' }}>
+                          
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                              <span>{catLbl.businessStability}:</span>
+                              <strong>{selectedApp.scoreBreakdown.businessStability || 0} / 25</strong>
+                            </div>
+                            {detailed?.businessStability?.map((d, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, paddingLeft: '1rem' }}><span>- {itemLbl[d.label] || d.label}</span><span>+{d.score}</span></div>)}
+                          </div>
+                          
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                              <span>{catLbl.professionalCompetency}:</span>
+                              <strong>{selectedApp.scoreBreakdown.professionalCompetency || 0} / 25</strong>
+                            </div>
+                            {detailed?.professionalCompetency?.map((d, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, paddingLeft: '1rem' }}><span>- {itemLbl[d.label] || d.label}</span><span>+{d.score}</span></div>)}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                              <span>{catLbl.householdStatus}:</span>
+                              <strong>{selectedApp.scoreBreakdown.householdStatus || 0} / 15</strong>
+                            </div>
+                            {detailed?.householdStatus?.map((d, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, paddingLeft: '1rem' }}><span>- {itemLbl[d.label] || d.label}</span><span>+{d.score}</span></div>)}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                              <span>{catLbl.economicContribution}:</span>
+                              <strong>{selectedApp.scoreBreakdown.economicContribution || 0} / 25</strong>
+                            </div>
+                            {detailed?.economicContribution?.map((d, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, paddingLeft: '1rem' }}><span>- {itemLbl[d.label] || d.label}</span><span>+{d.score}</span></div>)}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.2rem', marginBottom: '0.3rem' }}>
+                              <span>{catLbl.specialAwards}:</span>
+                              <strong>{selectedApp.scoreBreakdown.specialAwards || 0} / 10</strong>
+                            </div>
+                            {detailed?.specialAwards?.map((d, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, paddingLeft: '1rem' }}><span>- {itemLbl[d.label] || d.label}</span><span>+{d.score}</span></div>)}
+                          </div>
+
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </DetailSection>
  
                 <DetailSection icon={<PenTool size={18}/>} title="Equipment Breakdown">
@@ -567,10 +745,10 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false }) {
               </div>
             ) : null}
             
-            {selectedApp.status === 'rejected' && (selectedApp.dsReview?.comments || selectedApp.directorReview?.comments) && (
+            {selectedApp.status === 'rejected' && (selectedApp.gnReview?.comments || selectedApp.dsReview?.comments || selectedApp.directorReview?.comments) && (
               <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(244, 63, 94, 0.1)', borderRadius: '14px', border: '1px solid rgba(244, 63, 94, 0.2)' }}>
                 <p style={{ margin: 0, color: '#f43f5e', fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.5rem', fontWeight: 700 }}>Reviewer Comments:</p>
-                <p style={{ margin: 0, color: '#fff', lineHeight: '1.5', fontSize: '0.95rem' }}>{selectedApp.directorReview?.comments || selectedApp.dsReview?.comments}</p>
+                <p style={{ margin: 0, color: '#fff', lineHeight: '1.5', fontSize: '0.95rem' }}>{selectedApp.directorReview?.comments || selectedApp.dsReview?.comments || selectedApp.gnReview?.comments}</p>
               </div>
             )}
           </div>

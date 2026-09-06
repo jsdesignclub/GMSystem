@@ -1,3 +1,12 @@
+function isNoValue(val) {
+  if (!val) return true;
+  const trimmed = String(val).trim().toLowerCase();
+  if (trimmed === '') return true;
+  if (trimmed === '-') return true;
+  const noWords = ['no', 'n/a', 'na', 'not', 'නැ', 'නෑ', 'නො', 'නු'];
+  return noWords.some(w => trimmed === w || trimmed.startsWith(w));
+}
+
 export function calculateScore(data) {
   const breakdown = {
     businessStability: 0,
@@ -21,30 +30,14 @@ export function calculateScore(data) {
   const production = data.production || {};
 
   // --- 1. Business Stability & Growth Potential (Max 25 Marks) ---
-  if (business.businessName && business.businessName.trim() !== '' && business.regNo && business.regNo.trim() !== '') {
+  if (business.businessName && business.businessName.trim() !== '' && !isNoValue(business.regNo)) {
     breakdown.businessStability += 10;
     detailed.businessStability.push({ label: 'Business Name & Reg', score: 10 });
   }
-  if (business.licenseNo && business.licenseNo.trim() !== '') {
+  if (!isNoValue(business.licenseNo)) {
     breakdown.businessStability += 5;
     detailed.businessStability.push({ label: 'Trade License', score: 5 });
   }
-  const estIncome = Number(production.estimatedIncome) || 0;
-  const prodCost = Number(production.productionCost) || 0;
-  const netIncome = estIncome - prodCost;
-  
-  let incomeScore = 0;
-  if (netIncome >= 5000 && netIncome <= 10000) incomeScore = 1;
-  else if (netIncome > 10000 && netIncome <= 15000) incomeScore = 2;
-  else if (netIncome > 15000 && netIncome <= 20000) incomeScore = 3;
-  else if (netIncome > 20000 && netIncome <= 30000) incomeScore = 4;
-  else if (netIncome > 30000) incomeScore = 5;
-  
-  if (incomeScore > 0) {
-    breakdown.businessStability += incomeScore;
-    detailed.businessStability.push({ label: 'Monthly Income', score: incomeScore });
-  }
-
   if (business.hasBookkeeping === 'yes') {
     breakdown.businessStability += 5;
     detailed.businessStability.push({ label: 'Financial Discipline (Bookkeeping)', score: 5 });
@@ -92,6 +85,21 @@ export function calculateScore(data) {
   }
 
   // --- 4. Economic Contribution & Innovation (Max 25 Marks) ---
+
+  // සංවර්ධන ප්‍රභවය - මාසික ආදායම (Average Monthly Income, Business Details)
+  const avgMonthlyIncome = Number(business.avgMonthlyIncome) || 0;
+  let incomeScore = 0;
+  if (avgMonthlyIncome >= 5000 && avgMonthlyIncome <= 10000) incomeScore = 1;
+  else if (avgMonthlyIncome > 10000 && avgMonthlyIncome <= 15000) incomeScore = 2;
+  else if (avgMonthlyIncome > 15000 && avgMonthlyIncome <= 20000) incomeScore = 3;
+  else if (avgMonthlyIncome > 20000 && avgMonthlyIncome <= 30000) incomeScore = 4;
+  else if (avgMonthlyIncome > 30000) incomeScore = 5;
+
+  if (incomeScore > 0) {
+    breakdown.economicContribution += incomeScore;
+    detailed.economicContribution.push({ label: 'Monthly Income (Development Source)', score: incomeScore });
+  }
+
   const employees = Number(business.employeeCount) || 0;
   let empScore = 0;
   if (employees >= 8) empScore = 10;

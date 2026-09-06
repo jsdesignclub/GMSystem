@@ -6,6 +6,7 @@ import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Setting
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Filter, List, Package } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
+import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' };
@@ -25,7 +26,7 @@ function AdminModule({ activeTab: externalTab }) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', role: 'development_officer', division: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', role: 'development_officer', division: '', gsDivision: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scoringPolicy, setScoringPolicy] = useState({
     businessStability: { nameReg: 10, tradeLicense: 5, incomeMax: 5, bookkeeping: 5 },
@@ -58,6 +59,7 @@ function AdminModule({ activeTab: externalTab }) {
 
   const roles = [
     { id: 'development_officer', label: 'Development Officer' },
+    { id: 'grama_niladhari', label: 'Grama Niladhari' },
     { id: 'divisional_secretary', label: 'Divisional Secretary' },
     { id: 'director', label: 'Director' },
     { id: 'accountant', label: 'Accountant' },
@@ -148,41 +150,65 @@ function AdminModule({ activeTab: externalTab }) {
 
     if (dataToExport.length === 0) return alert("No records to export");
 
-    const columns = ["#", "ID", "Name", "Business", "Phone", "Division", "GS Div", "DO", "Equipment", "Phase", "Score", "Total Cost", "Grant", "Amount Paid"];
+    const isDivisionFiltered = divisionFilter && divisionFilter !== 'all';
+
+    const selectedDivisions = [...new Set(dataToExport.map(app => app.division).filter(Boolean))];
+    const selectedDos = [...new Set(dataToExport.map(app => (app.officer?.email?.split('@')[0] || 'System')).filter(Boolean))];
+
+    const showDivisionColumns = !isDivisionFiltered;
+
+    const columns = showDivisionColumns
+      ? ["#", "Name", "Business", "Phone", "Division", "DO", "GS Div", "Equipment", "Brand", "Model No", "Score", "Total Cost", "Grant", "Amount Paid"]
+      : ["#", "Name", "Business", "Phone", "GS Div", "Equipment", "Brand", "Model No", "Score", "Total Cost", "Grant", "Amount Paid"];
 
     const rows = dataToExport.map((app, i) => {
       const equip = app.equipment?.items?.[0] || {};
-      return [
+      const base = [
         (i + 1).toString(),
-        app.id.substring(0, 6),
         app.personal?.fullName || "N/A",
         app.business?.businessName || "N/A",
         app.personal?.phone || "-",
-        app.division || "-",
         app.personal?.gsDivision || "-",
-        app.officer?.email?.split('@')[0] || "-",
         equip.name || "-",
-        app.status === 'approved' ? 'Authorized' : app.status,
+        equip.brand || "-",
+        equip.model || "-",
         (app.score || 0).toString(),
         (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
         (app.equipment?.totalGrant || 0).toLocaleString(),
         isPaid(app) ? `LKR ${(app.equipment?.totalGrant || 0).toLocaleString()}` : 'Pending'
       ];
+      if (showDivisionColumns) {
+        return [
+          base[0], base[1], base[2], base[3],
+          app.division || "-",
+          app.officer?.email?.split('@')[0] || "-",
+          ...base.slice(4)
+        ];
+      }
+      return base;
     });
+
+    const headerNote = isDivisionFiltered
+      ? `Division: ${divisionFilter} | DO: ${selectedDos.join(', ')}`
+      : (selectedDivisions.length === 1 && selectedDos.length === 1)
+        ? `Division: ${selectedDivisions[0]} | DO: ${selectedDos[0]}`
+        : '';
 
     try {
       await exportTablePDF({
         title: `SME Grant System - ${activeSubTab === 'dispatch' ? 'Final Dispatch List' : 'Master Records'}`,
-        subtitle: `District/Province: Uva Provincial Government | Report Date: ${new Date().toLocaleString()}`,
+        subtitle: [headerNote, `Department of Industries Development Uva Province | Report Date: ${new Date().toLocaleString()}`].filter(Boolean).join('  |  '),
         columns,
         rows,
-        foot: [
-          '', '', '', '', '', '', '', '', '', '',
-          'TOTAL',
-          `LKR ${totals.totalCost.toLocaleString()}`,
-          `LKR ${totals.totalGrant.toLocaleString()}`,
-          `LKR ${totals.totalPaid.toLocaleString()}`
-        ],
+        foot: (() => {
+          const totalCols = showDivisionColumns ? 14 : 12;
+          const cells = Array(totalCols).fill('');
+          cells[0] = 'TOTAL';
+          cells[totalCols - 3] = `LKR ${totals.totalCost.toLocaleString()}`;
+          cells[totalCols - 2] = `LKR ${totals.totalGrant.toLocaleString()}`;
+          cells[totalCols - 1] = `LKR ${totals.totalPaid.toLocaleString()}`;
+          return cells;
+        })(),
         filename: `${activeSubTab}_report_${new Date().toISOString().split('T')[0]}.pdf`,
         orientation: 'landscape',
         format: 'a3'
@@ -426,7 +452,8 @@ function AdminModule({ activeTab: externalTab }) {
       await Promise.all(updates);
       updated = updates.length;
       alert(`Recalculation complete!\nUpdated: ${updated} applications\nFailed: ${failed}`);
-      loadApplications();
+      fetchDispatchQueue();
+      fetchApprovedApps();
     } catch (err) {
       alert('Error recalculating scores: ' + err.message);
       console.error(err);
@@ -594,6 +621,7 @@ function AdminModule({ activeTab: externalTab }) {
         email: newUser.email,
         role: newUser.role,
         division: newUser.division,
+        gsDivision: normalizeGsName(newUser.gsDivision),
         status: 'active',
         createdAt: serverTimestamp()
       });
@@ -620,6 +648,15 @@ function AdminModule({ activeTab: externalTab }) {
       await updateDoc(doc(db, 'users', uid), { division: newDiv });
       setUsers(prev => prev.map(u => u.uid === uid ? { ...u, division: newDiv } : u));
       alert("Division updated");
+    } catch (error) { alert(error.message); }
+  };
+
+  const handleUpdateGsDivision = async (uid, newGs) => {
+    try {
+      const normalized = normalizeGsName(newGs);
+      await updateDoc(doc(db, 'users', uid), { gsDivision: normalized });
+      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, gsDivision: normalized } : u));
+      alert("GS Division updated");
     } catch (error) { alert(error.message); }
   };
 
@@ -750,7 +787,7 @@ function AdminModule({ activeTab: externalTab }) {
                </div>
             </div>
             
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1800px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '2300px' }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <th style={{ ...thStyle, width: '50px' }}>
@@ -761,13 +798,16 @@ function AdminModule({ activeTab: externalTab }) {
                      />
                   </th>
                   <th style={thStyle}>No</th>
-                  <th style={thStyle}>ID No</th>
                   <th style={thStyle}>Full Name</th>
                   <th style={thStyle}>Business Name</th>
                   <th style={thStyle}>Phone</th>
+                  <th style={thStyle}>Business Registration No</th>
+                  <th style={thStyle}>Trade License No</th>
+                  <th style={thStyle}>NID</th>
                   <th style={thStyle}>Division</th>
-                  <th style={thStyle}>DO Name</th>
                   <th style={thStyle}>Equipment</th>
+                  <th style={thStyle}>Model No</th>
+                  <th style={thStyle}>Brand</th>
                   <th style={thStyle}>Phase</th>
                   <th style={thStyle}>Score</th>
                   <th style={thStyle}>Total Cost</th>
@@ -789,18 +829,16 @@ function AdminModule({ activeTab: externalTab }) {
                          />
                       </td>
                       <td style={tdStyle}>{pageStart + idx + 1}</td>
-                      <td style={tdStyle}><code style={{ fontSize: '0.75rem', color: '#3b82f6' }}>{app.id.substring(0, 8)}</code></td>
                       <td style={tdStyle}><div style={{ fontWeight: 600 }}>{app.personal?.fullName}</div></td>
                       <td style={tdStyle}>{app.business?.businessName}</td>
                       <td style={tdStyle}>{app.personal?.phone}</td>
+                      <td style={tdStyle}>{app.business?.regNo || '-'}</td>
+                      <td style={tdStyle}>{app.business?.licenseNo || '-'}</td>
+                      <td style={tdStyle}>{app.personal?.nic || '-'}</td>
                       <td style={tdStyle}>{app.division}</td>
-                      <td style={tdStyle}>
-                        <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{app.officer?.email?.split('@')[0] || 'System'}</div>
-                        {app.dsReview?.reviewedBy && (
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>DS: {app.dsReview.reviewedBy.split('@')[0]}</div>
-                        )}
-                      </td>
                       <td style={tdStyle}>{firstItem.name || 'N/A'}</td>
+                      <td style={tdStyle}>{firstItem.model || '-'}</td>
+                      <td style={tdStyle}>{firstItem.brand || '-'}</td>
                       <td style={tdStyle}>
                         <div style={{ 
                           padding: '4px 10px', 
@@ -853,7 +891,7 @@ function AdminModule({ activeTab: externalTab }) {
               {filteredRecords.length > 0 && (
                 <tfoot>
                   <tr style={{ background: 'rgba(16, 185, 129, 0.06)', borderTop: '2px solid rgba(16, 185, 129, 0.25)' }}>
-                    <td colSpan={11} style={{ ...tdStyle, fontWeight: 800, color: '#10b981', textAlign: 'right', fontSize: '0.9rem' }}>
+                    <td colSpan={14} style={{ ...tdStyle, fontWeight: 800, color: '#10b981', textAlign: 'right', fontSize: '0.9rem' }}>
                       TOTAL ({totals.count} Applications)
                     </td>
                     <td style={{ ...tdStyle, fontWeight: 800, color: '#fff', fontSize: '0.9rem' }}>LKR {totals.totalCost.toLocaleString()}</td>
@@ -956,6 +994,7 @@ function AdminModule({ activeTab: externalTab }) {
                    <th style={thStyle}>Staff Member</th>
                    <th style={thStyle}>System Role</th>
                    <th style={thStyle}>Assigned Sector</th>
+                   <th style={thStyle}>GS Division</th>
                    <th style={thStyle}>Control</th>
                  </tr>
                </thead>
@@ -974,11 +1013,17 @@ function AdminModule({ activeTab: externalTab }) {
                        </select>
                      </td>
                      <td style={tdStyle}>
-                       <select value={user.division || ''} onChange={e => handleUpdateDivision(user.uid, e.target.value)} style={selectStyle}>
-                         <option value="">Global/None</option>
-                         {divisions.map(d => <option key={d} value={d}>{d}</option>)}
-                       </select>
-                     </td>
+                        <select value={user.division || ''} onChange={e => handleUpdateDivision(user.uid, e.target.value)} style={selectStyle}>
+                          <option value="">Global/None</option>
+                          {divisions.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </td>
+                      <td style={tdStyle}>
+                        <select value={user.gsDivision || ''} onChange={e => handleUpdateGsDivision(user.uid, e.target.value)} style={selectStyle}>
+                          <option value="">None</option>
+                          {gsDivisions.map(g => <option key={g.id || g.name} value={g.name}>{g.name}</option>)}
+                        </select>
+                      </td>
                      <td style={tdStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                           <span style={{ 
@@ -1402,10 +1447,21 @@ function AdminModule({ activeTab: externalTab }) {
                <form onSubmit={handleCreateUser}>
                   <div style={{ marginBottom: '1.5rem' }}><label style={labelStyle}>Email</label><input type="email" required style={inputStyle} value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} /></div>
                   <div style={{ marginBottom: '1.5rem' }}><label style={labelStyle}>Password</label><input type="password" required minLength={6} style={inputStyle} value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
                     <div><label style={labelStyle}>Role</label><select style={inputStyle} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>{roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></div>
-                    <div><label style={labelStyle}>Sector</label><select style={inputStyle} value={newUser.division} onChange={e => setNewUser({...newUser, division: e.target.value})}><option value="">Select Division</option>{divisions.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                    <div><label style={labelStyle}>Sector</label><select style={inputStyle} value={newUser.division} onChange={e => setNewUser({...newUser, division: e.target.value, gsDivision: ''})}><option value="">Select Division</option>{divisions.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                   </div>
+                  {newUser.role === 'grama_niladhari' && (
+                    <div style={{ marginBottom: '2rem' }}>
+                      <label style={labelStyle}>GS Division</label>
+                      <select style={inputStyle} required value={newUser.gsDivision} onChange={e => setNewUser({ ...newUser, gsDivision: e.target.value })}>
+                        <option value="">Select GS Division</option>
+                        {(newUser.division ? gsDivisions.filter(g => g.dsDivision === newUser.division) : gsDivisions).map(g => (
+                          <option key={g.id || g.name} value={g.name}>{g.name}{g.dsDivision ? ` (${g.dsDivision})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: '1rem', background: '#3b82f6', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>{isSubmitting ? 'Processing...' : 'Create Account'}</button>
                </form>
             </motion.div>

@@ -115,12 +115,23 @@ h1 {
   gap: 1.5rem;
 }
 
+.grid-3 {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 1.5rem;
+}
+
 .mobile-only {
   display: none !important;
 }
 
 @media (max-width: 767px) {
   .grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  .grid-3 {
     grid-template-columns: 1fr !important;
     gap: 1rem !important;
   }

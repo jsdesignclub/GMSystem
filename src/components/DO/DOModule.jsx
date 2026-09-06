@@ -10,6 +10,7 @@ import { db, auth, storage } from '../../firebase';
 import { collection, addDoc, serverTimestamp, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { calculateScore as computeAutomatedScore } from '../../utils/calculateScore';
+import { normalizeGsName } from '../../utils/gsName';
 import { useAuth } from '../../context/AuthContext';
 import { getTranslation } from '../../i18n';
 
@@ -181,6 +182,7 @@ function DOModule({ initialData, onComplete, language = 'en' }) {
         scoreBreakdown: breakdown,
         status: initialStatus,
         division: userDivision || 'General',
+        gsDivision: normalizeGsName(formData.personal?.gsDivision),
         officer: {
           uid: auth.currentUser.uid,
           email: auth.currentUser.email

@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userDivision, setUserDivision] = useState(null);
+  const [userGsDivision, setUserGsDivision] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,24 +32,29 @@ export function AuthProvider({ children }) {
               setCurrentUser(null);
               setUserRole(null);
               setUserDivision(null);
+              setUserGsDivision(null);
               setLoading(false);
               return;
             }
 
             setUserRole(data.role);
             setUserDivision(data.division);
+            setUserGsDivision(data.gsDivision || null);
           } else {
             setUserRole(null);
             setUserDivision(null);
+            setUserGsDivision(null);
           }
         } catch (error) {
           console.error("Error fetching user metadata:", error);
           setUserRole(null);
           setUserDivision(null);
+          setUserGsDivision(null);
         }
       } else {
         setUserRole(null);
         setUserDivision(null);
+        setUserGsDivision(null);
       }
       setLoading(false);
     });
@@ -56,10 +62,28 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  const refreshUserData = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setUserRole(data.role);
+        setUserDivision(data.division || null);
+        setUserGsDivision(data.gsDivision || null);
+      }
+    } catch (error) {
+      console.error("Error refreshing user metadata:", error);
+    }
+  };
+
   const value = {
     currentUser,
     userRole,
     userDivision,
+    userGsDivision,
+    refreshUserData,
     loading
   };
 

@@ -4,21 +4,29 @@ import { motion } from 'framer-motion';
 import { User, LayoutDashboard, Bell, Search, CheckCircle } from 'lucide-react';
 import { auth } from '../firebase';
 import DOModule from './DO/DOModule';
+import DODashboard from './DO/DODashboard';
 import ApplicationsList from './DO/ApplicationsList';
 import DSModule from './DSModule';
+import GSModule from './GSModule';
+import GSSetup from './GSSetup';
 import DirectorModule from './DirectorModule';
 import AccountantModule from './AccountantModule';
 import AdminModule from './AdminModule';
+import AdminDashboard from './AdminDashboard';
 import Sidebar from './Sidebar';
 import { Menu } from 'lucide-react';
 import { getTranslation } from '../i18n';
 
 function Dashboard({ language = 'en', setLanguage }) {
-  const { currentUser, userRole } = useAuth();
+  const { currentUser, userRole, userGsDivision } = useAuth();
   const normalizedRole = userRole?.toLowerCase();
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [editingApp, setEditingApp] = useState(null);
+  const [gsSetupDismissed, setGsSetupDismissed] = useState(() => !!localStorage.getItem('gs_setup_skipped'));
+
+  const showGsSetup = normalizedRole === 'development_officer' && !userGsDivision && !gsSetupDismissed;
 
   const handleLogout = () => {
     auth.signOut();
@@ -26,8 +34,14 @@ function Dashboard({ language = 'en', setLanguage }) {
 
   const renderContent = () => {
     // Role-based defaults
+    if (normalizedRole === 'development_officer' && activeTab === 'overview') {
+      return <DODashboard language={language} />;
+    }
     if (normalizedRole === 'divisional_secretary' && (activeTab === 'overview' || activeTab === 'approval-queue')) {
       return <DSModule />;
+    }
+    if (normalizedRole === 'grama_niladhari' && (activeTab === 'overview' || activeTab === 'gs-approval-queue')) {
+      return <GSModule />;
     }
     if (normalizedRole === 'director' && (activeTab === 'overview' || activeTab === 'director-queue')) {
       return <DirectorModule />;
@@ -35,13 +49,18 @@ function Dashboard({ language = 'en', setLanguage }) {
     if (normalizedRole === 'accountant' && (activeTab === 'overview' || activeTab === 'procurement')) {
       return <AccountantModule statusFilter="approved" />;
     }
-    if (normalizedRole === 'admin' && (['overview', 'users', 'records', 'sectors', 'policy', 'scoring', 'scoring-board', 'dispatch', 'approval-flow'].includes(activeTab))) {
+    if (normalizedRole === 'admin' && activeTab === 'overview') {
+      return <AdminDashboard language={language} />;
+    }
+    if (normalizedRole === 'admin' && (['users', 'records', 'sectors', 'policy', 'scoring', 'scoring-board', 'dispatch', 'approval-flow'].includes(activeTab))) {
       return <AdminModule activeTab={activeTab} />;
     }
 
     switch (activeTab) {
       case 'approval-queue':
         return <DSModule />;
+      case 'gs-approval-queue':
+        return <GSModule />;
       case 'director-queue':
         return <DirectorModule />;
       case 'procurement':
@@ -60,17 +79,17 @@ function Dashboard({ language = 'en', setLanguage }) {
       case 'new-app':
         return <DOModule initialData={editingApp} onComplete={() => setEditingApp(null)} language={language} />;
       case 'pending-app':
-        return <ApplicationsList statusFilter="pending_ds" onEdit={(app) => {
+        return <ApplicationsList statusFilter="pending_ds" language={language} onEdit={(app) => {
           setEditingApp(app);
           setActiveTab('new-app');
         }} />;
       case 'approved-app':
-        return <ApplicationsList statusFilter="approved" onEdit={(app) => {
+        return <ApplicationsList statusFilter="approved" language={language} onEdit={(app) => {
           setEditingApp(app);
           setActiveTab('new-app');
         }} />;
       case 'all-app':
-        return <ApplicationsList statusFilter="all" onEdit={(app) => {
+        return <ApplicationsList statusFilter="all" language={language} onEdit={(app) => {
           setEditingApp(app);
           setActiveTab('new-app');
         }} />;
@@ -96,7 +115,7 @@ function Dashboard({ language = 'en', setLanguage }) {
                 </div>
                 {normalizedRole === 'development_officer' ? (
                   <div className="animate-fade-in">
-                    <ApplicationsList statusFilter="approved" isCompact={true} />
+                    <ApplicationsList statusFilter="approved" language={language} isCompact={true} />
                   </div>
                 ) : (
                   <div style={{ padding: '2rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#475569', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px', background: 'rgba(255,255,255,0.01)' }}>
@@ -136,6 +155,8 @@ function Dashboard({ language = 'en', setLanguage }) {
         onClose={() => setIsSidebarOpen(false)} 
         userRole={userRole}
         language={language}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       
       <main style={{ 
@@ -224,6 +245,10 @@ function Dashboard({ language = 'en', setLanguage }) {
         </div>
 
         {renderContent()}
+
+        {showGsSetup && (
+          <GSSetup onSkip={() => setGsSetupDismissed(true)} />
+        )}
       </main>
     </div>
   );
