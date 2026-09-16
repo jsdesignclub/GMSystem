@@ -76,6 +76,7 @@ function AdminModule({ activeTab: externalTab }) {
   const [recordSearch, setRecordSearch] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('all');
   const [equipmentFilter, setEquipmentFilter] = useState('all');
+  const [scoreRangeFilter, setScoreRangeFilter] = useState('all');
   const [scoreSort, setScoreSort] = useState('desc'); 
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -235,7 +236,15 @@ function AdminModule({ activeTab: externalTab }) {
       const items = app.equipment?.items || [];
       const matchesEquipment = equipmentFilter === 'all' || items.some(i => i.name === equipmentFilter);
 
-      return matchesSearch && matchesDivision && matchesEquipment;
+      const score = app.score || 0;
+      let matchesScore = true;
+      if (scoreRangeFilter !== 'all') {
+        const threshold = parseInt(scoreRangeFilter.slice(2), 10);
+        if (scoreRangeFilter.startsWith('ge')) matchesScore = score >= threshold;
+        else if (scoreRangeFilter.startsWith('le')) matchesScore = score <= threshold;
+      }
+
+      return matchesSearch && matchesDivision && matchesEquipment && matchesScore;
     });
 
     // Apply Sorting
@@ -280,7 +289,7 @@ function AdminModule({ activeTab: externalTab }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordSearch, divisionFilter, equipmentFilter, scoreSort, pageSize, activeSubTab]);
+  }, [recordSearch, divisionFilter, equipmentFilter, scoreRangeFilter, scoreSort, pageSize, activeSubTab]);
 
 
   // Sync with external sidebar tab
@@ -779,6 +788,35 @@ function AdminModule({ activeTab: externalTab }) {
                  >
                    <option value="desc">Score: High to Low</option>
                    <option value="asc">Score: Low to High</option>
+                 </select>
+               </div>
+
+               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: '200px' }}>
+                 <Filter size={18} color="#94a3b8" />
+                 <select 
+                   value={scoreRangeFilter} 
+                   onChange={e => setScoreRangeFilter(e.target.value)}
+                   style={{ ...selectStyle, width: '100%', height: '45px' }}
+                 >
+                   <option value="all">All Scores</option>
+                   <option value="ge90">90 & Above</option>
+                   <option value="ge80">80 & Above</option>
+                   <option value="ge70">70 & Above</option>
+                   <option value="ge60">60 & Above</option>
+                   <option value="ge50">50 & Above</option>
+                   <option value="ge40">40 & Above</option>
+                   <option value="ge30">30 & Above</option>
+                   <option value="ge20">20 & Above</option>
+                   <option value="ge10">10 & Above</option>
+                   <option value="le10">10 & Below</option>
+                   <option value="le20">20 & Below</option>
+                   <option value="le30">30 & Below</option>
+                   <option value="le40">40 & Below</option>
+                   <option value="le50">50 & Below</option>
+                   <option value="le60">60 & Below</option>
+                   <option value="le70">70 & Below</option>
+                   <option value="le80">80 & Below</option>
+                   <option value="le90">90 & Below</option>
                  </select>
                </div>
 
