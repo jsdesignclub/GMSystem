@@ -8,6 +8,8 @@ import { Download, Filter, List, Package } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
+import { generateApplicationPDF } from '../utils/generateApplicationPDF';
+import { generateSinhalaApplicationPDF } from '../utils/generateSinhalaApplicationPDF';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' };
 const tdStyle = { padding: '1.2rem 1.5rem' };
@@ -70,6 +72,7 @@ function AdminModule({ activeTab: externalTab }) {
   const [allApps, setAllApps] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
+  const [pdfLoading, setPdfLoading] = useState('');
   
   const [dispatchQueue, setDispatchQueue] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -285,6 +288,32 @@ function AdminModule({ activeTab: externalTab }) {
     if (!src) return false;
     if (src.startsWith('data:image/')) return true;
     return /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(src.split('?')[0]);
+  };
+
+  const handleDownloadEnglishPDF = async (app) => {
+    if (pdfLoading) return;
+    setPdfLoading('en');
+    try {
+      generateApplicationPDF(app);
+    } catch (err) {
+      console.error('Failed to generate English PDF', err);
+      alert('Failed to generate the PDF. Please try again.');
+    } finally {
+      setPdfLoading('');
+    }
+  };
+
+  const handleDownloadSinhalaPDF = async (app) => {
+    if (pdfLoading) return;
+    setPdfLoading('si');
+    try {
+      await generateSinhalaApplicationPDF(app);
+    } catch (err) {
+      console.error('Failed to generate Sinhala PDF', err);
+      alert('Failed to generate the PDF. Please try again.');
+    } finally {
+      setPdfLoading('');
+    }
   };
 
   useEffect(() => {
@@ -1519,12 +1548,30 @@ function AdminModule({ activeTab: externalTab }) {
                animate={{ opacity: 1, y: 0 }} 
                exit={{ opacity: 0, y: 30 }}
             >
-               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
                   <div>
                     <h3 style={{ margin: 0 }}>Application Dossier</h3>
                     <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', opacity: 0.6 }}>ID: {selectedApp.id}</p>
                   </div>
-                  <button onClick={() => setSelectedApp(null)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}><X /></button>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => handleDownloadEnglishPDF(selectedApp)}
+                      disabled={!!pdfLoading}
+                      style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6', cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading && pdfLoading !== 'en' ? 0.5 : 1, padding: '0 0.8rem', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600, height: '40px' }}
+                      title="Download English PDF"
+                    >
+                      <Download size={16} /> {pdfLoading === 'en' ? 'Preparing...' : 'English'}
+                    </button>
+                    <button
+                      onClick={() => handleDownloadSinhalaPDF(selectedApp)}
+                      disabled={!!pdfLoading}
+                      style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading && pdfLoading !== 'si' ? 0.5 : 1, padding: '0 0.8rem', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600, height: '40px' }}
+                      title="සිංහල PDF බාගන්න"
+                    >
+                      <Download size={16} /> {pdfLoading === 'si' ? 'Preparing...' : 'සිංහල'}
+                    </button>
+                    <button onClick={() => setSelectedApp(null)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}><X /></button>
+                  </div>
                </div>
 
                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
