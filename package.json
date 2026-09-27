@@ -7,7 +7,7 @@
     "dev": "vite",
     "prebuild": "node -e \"require('fs').copyFileSync('index.src.html','index.html')\"",
     "build": "vite build",
-    "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html','index.html');require('fs').cpSync('dist/assets','assets',{recursive:true})\"",
+    "postbuild": "node -e \"const f=require('fs');f.rmSync('assets',{recursive:true,force:true});f.cpSync('dist/assets','assets',{recursive:true});f.copyFileSync('dist/index.html','index.html')\"",
     "preview": "vite preview"
   },
   "dependencies": {

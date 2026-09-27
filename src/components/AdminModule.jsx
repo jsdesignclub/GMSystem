@@ -1,10 +1,10 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Filter, List, Package } from 'lucide-react';
+import { Download, Filter, List, Package, ChevronDown } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
@@ -72,8 +72,11 @@ function AdminModule({ activeTab: externalTab }) {
   const [allApps, setAllApps] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
+  const equipPickerRef = useRef(null);
   const [pdfLoading, setPdfLoading] = useState('');
   const [equipmentGroup, setEquipmentGroup] = useState([]);
+  const [equipPickerOpen, setEquipPickerOpen] = useState(false);
+  const [equipPickerSearch, setEquipPickerSearch] = useState('');
   const [groupSelectedIds, setGroupSelectedIds] = useState([]);
   const [groupSearch, setGroupSearch] = useState('');
   
@@ -338,6 +341,36 @@ function AdminModule({ activeTab: externalTab }) {
     setEquipmentGroup(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
     setGroupSelectedIds([]);
   };
+
+  // Equipment options narrowed by the dropdown's own search box
+  const equipPickerOptions = useMemo(() => {
+    const q = equipPickerSearch.trim().toLowerCase();
+    if (!q) return equipmentGroupOptions;
+    return equipmentGroupOptions.filter(o => o.name.toLowerCase().includes(q));
+  }, [equipmentGroupOptions, equipPickerSearch]);
+
+  // Close the dropdown on outside click or Escape
+  useEffect(() => {
+    if (!equipPickerOpen) return;
+    const onPointerDown = (e) => {
+      if (equipPickerRef.current && !equipPickerRef.current.contains(e.target)) {
+        setEquipPickerOpen(false);
+        setEquipPickerSearch('');
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setEquipPickerOpen(false);
+        setEquipPickerSearch('');
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [equipPickerOpen]);
 
   // Items of an application that fall inside the selected group
   const groupItemsOf = (app) => (app.equipment?.items || [])
@@ -936,22 +969,14 @@ function AdminModule({ activeTab: externalTab }) {
                     </span>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    onClick={() => { setEquipmentGroup(equipmentGroupOptions.map(o => o.name)); setGroupSelectedIds([]); }}
-                    disabled={equipmentGroupOptions.length === 0}
-                    style={{ ...pageNavBtnStyle, cursor: equipmentGroupOptions.length === 0 ? 'not-allowed' : 'pointer', opacity: equipmentGroupOptions.length === 0 ? 0.5 : 1 }}
-                  >
-                    Select all
-                  </button>
+                {equipmentGroup.length > 0 && (
                   <button
                     onClick={() => { setEquipmentGroup([]); setGroupSelectedIds([]); }}
-                    disabled={equipmentGroup.length === 0}
-                    style={{ ...pageNavBtnStyle, cursor: equipmentGroup.length === 0 ? 'not-allowed' : 'pointer', opacity: equipmentGroup.length === 0 ? 0.5 : 1 }}
+                    style={pageNavBtnStyle}
                   >
-                    Clear
+                    Clear all
                   </button>
-                </div>
+                )}
               </div>
 
               {equipmentGroupOptions.length === 0 ? (
@@ -959,28 +984,126 @@ function AdminModule({ activeTab: externalTab }) {
                   No equipment found in the dispatch queue yet.
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                  {equipmentGroupOptions.map(opt => {
-                    const on = equipmentGroup.includes(opt.name);
-                    return (
-                      <button
-                        key={opt.name}
-                        onClick={() => toggleEquipmentGroup(opt.name)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '0.5rem',
-                          padding: '0.5rem 0.9rem', borderRadius: '10px', cursor: 'pointer',
-                          background: on ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.03)',
-                          border: `1px solid ${on ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                          color: on ? '#93c5fd' : '#94a3b8', fontSize: '0.82rem', fontWeight: 600
-                        }}
-                      >
-                        {on && <CheckCircle size={14} />}
-                        {opt.name}
-                        <span style={{ fontSize: '0.7rem', opacity: 0.7, background: 'rgba(0,0,0,0.25)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>{opt.count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div ref={equipPickerRef} style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setEquipPickerOpen(o => !o)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: '1rem', padding: '0.8rem 1rem', borderRadius: '12px', cursor: 'pointer',
+                        background: 'rgba(0,0,0,0.25)', border: `1px solid ${equipPickerOpen ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                        color: equipmentGroup.length > 0 ? '#e2e8f0' : '#64748b', fontSize: '0.9rem', textAlign: 'left'
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {equipmentGroup.length === 0
+                          ? `Select equipment... (${equipmentGroupOptions.length} available)`
+                          : equipmentGroup.length === 1
+                            ? equipmentGroup[0]
+                            : `${equipmentGroup.length} equipment types selected`}
+                      </span>
+                      <ChevronDown size={18} style={{ color: '#64748b', flexShrink: 0, transform: equipPickerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                    </button>
+
+                    {equipPickerOpen && (
+                      <div style={{
+                        position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0, zIndex: 40,
+                        background: '#0c111d', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px',
+                        boxShadow: '0 20px 50px rgba(0,0,0,0.6)', overflow: 'hidden'
+                      }}>
+                        <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                          <div style={{ position: 'relative' }}>
+                            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} />
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Search equipment..."
+                              value={equipPickerSearch}
+                              onChange={e => setEquipPickerSearch(e.target.value)}
+                              style={{ ...searchStyle, padding: '0.6rem 1rem 0.6rem 2.2rem', fontSize: '0.85rem', background: 'rgba(0,0,0,0.3)' }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', padding: '0.6rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => { setEquipmentGroup([...new Set([...equipPickerOptions.map(o => o.name), ...equipmentGroup])]); setGroupSelectedIds([]); }}
+                            disabled={equipPickerOptions.length === 0}
+                            style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', cursor: equipPickerOptions.length === 0 ? 'not-allowed' : 'pointer', opacity: equipPickerOptions.length === 0 ? 0.5 : 1 }}
+                          >
+                            Select {equipPickerSearch ? 'these' : 'all'}
+                          </button>
+                          <button
+                            onClick={() => setEquipmentGroup(equipPickerOptions.filter(o => !equipmentGroup.includes(o.name)).map(o => o.name))}
+                            disabled={equipPickerOptions.every(o => equipmentGroup.includes(o.name))}
+                            style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', cursor: equipPickerOptions.every(o => equipmentGroup.includes(o.name)) ? 'not-allowed' : 'pointer', opacity: equipPickerOptions.every(o => equipmentGroup.includes(o.name)) ? 0.5 : 1 }}
+                          >
+                            Deselect {equipPickerSearch ? 'these' : 'all'}
+                          </button>
+                        </div>
+
+                        <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                          {equipPickerOptions.length === 0 ? (
+                            <p style={{ padding: '1.5rem', margin: 0, textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                              No equipment matches "{equipPickerSearch}"
+                            </p>
+                          ) : (
+                            equipPickerOptions.map(opt => {
+                              const on = equipmentGroup.includes(opt.name);
+                              return (
+                                <button
+                                  key={opt.name}
+                                  type="button"
+                                  onClick={() => toggleEquipmentGroup(opt.name)}
+                                  style={{
+                                    width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                    padding: '0.55rem 0.9rem', cursor: 'pointer', textAlign: 'left',
+                                    background: on ? 'rgba(59,130,246,0.12)' : 'transparent',
+                                    border: 'none', borderLeft: `2px solid ${on ? '#3b82f6' : 'transparent'}`,
+                                    color: on ? '#93c5fd' : '#cbd5e1', fontSize: '0.85rem'
+                                  }}
+                                >
+                                  <input type="checkbox" checked={on} readOnly style={{ width: '15px', height: '15px', pointerEvents: 'none', flexShrink: 0 }} />
+                                  <span style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.name}</span>
+                                  <span style={{ fontSize: '0.7rem', color: '#64748b', background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.45rem', borderRadius: '10px' }}>{opt.count}</span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selected chips, removable */}
+                  {equipmentGroup.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+                      {equipmentGroup.map(name => (
+                        <span
+                          key={name}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                            padding: '0.3rem 0.4rem 0.3rem 0.7rem', borderRadius: '20px',
+                            background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.35)',
+                            color: '#93c5fd', fontSize: '0.78rem', fontWeight: 600,
+                            maxWidth: '280px'
+                          }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleEquipmentGroup(name)}
+                            title={`Remove ${name}`}
+                            style={{ display: 'flex', background: 'rgba(255,255,255,0.08)', border: 'none', color: 'inherit', cursor: 'pointer', borderRadius: '50%', padding: '0.15rem' }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
