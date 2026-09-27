@@ -3,9 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "predev": "node -e \"require('fs').copyFileSync('index.src.html','index.html')\"",
     "dev": "vite",
     "prebuild": "node -e \"require('fs').copyFileSync('index.src.html','index.html')\"",
     "build": "vite build",
+    "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html','index.html');require('fs').cpSync('dist/assets','assets',{recursive:true})\"",
     "preview": "vite preview"
   },
   "dependencies": {
