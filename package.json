@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "prebuild": "node -e \"require('fs').copyFileSync('index.src.html','index.html')\"",
     "build": "vite build",
     "preview": "vite preview"
   },
