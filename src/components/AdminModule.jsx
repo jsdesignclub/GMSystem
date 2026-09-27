@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -73,6 +73,9 @@ function AdminModule({ activeTab: externalTab }) {
   const [appsLoading, setAppsLoading] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
   const [pdfLoading, setPdfLoading] = useState('');
+  const [equipmentGroup, setEquipmentGroup] = useState([]);
+  const [groupSelectedIds, setGroupSelectedIds] = useState([]);
+  const [groupSearch, setGroupSearch] = useState('');
   
   const [dispatchQueue, setDispatchQueue] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -313,6 +316,162 @@ function AdminModule({ activeTab: externalTab }) {
       alert('Failed to generate the PDF. Please try again.');
     } finally {
       setPdfLoading('');
+    }
+  };
+
+  // --- Equipment Group Procurement -------------------------------------------------
+  // Equipment names available to group, with how many queued applications requested each.
+  const equipmentGroupOptions = useMemo(() => {
+    const counts = new Map();
+    dispatchQueue.forEach(app => {
+      (app.equipment?.items || []).forEach(item => {
+        if (!item?.name) return;
+        counts.set(item.name, (counts.get(item.name) || 0) + 1);
+      });
+    });
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dispatchQueue]);
+
+  const toggleEquipmentGroup = (name) => {
+    setEquipmentGroup(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+    setGroupSelectedIds([]);
+  };
+
+  // Items of an application that fall inside the selected group
+  const groupItemsOf = (app) => (app.equipment?.items || [])
+    .filter(item => equipmentGroup.includes(item.name));
+
+  const groupApplications = useMemo(() => {
+    if (equipmentGroup.length === 0) return [];
+    const search = groupSearch.trim().toLowerCase();
+    return dispatchQueue
+      .filter(app => groupItemsOf(app).length > 0)
+      .filter(app => !search
+        || (app.personal?.fullName || '').toLowerCase().includes(search)
+        || (app.business?.businessName || '').toLowerCase().includes(search)
+        || (app.personal?.gsDivision || '').toLowerCase().includes(search)
+        || (app.id || '').toLowerCase().includes(search))
+      .sort((a, b) => (a.personal?.fullName || '').localeCompare(b.personal?.fullName || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatchQueue, equipmentGroup, groupSearch]);
+
+  const groupTotals = useMemo(() => groupApplications.reduce((acc, app) => {
+    const items = groupItemsOf(app);
+    acc.itemCount += items.length;
+    acc.units += items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    acc.itemCost += items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
+    acc.totalCost += (app.equipment?.totalGrant || 0) * 2;
+    acc.totalGrant += app.equipment?.totalGrant || 0;
+    return acc;
+  }, { itemCount: 0, units: 0, itemCost: 0, totalCost: 0, totalGrant: 0 }), [groupApplications]);
+
+  const groupSelectedApps = groupApplications.filter(app => groupSelectedIds.includes(app.id));
+  const groupForwardable = groupSelectedApps.filter(app => !app.adminDispatch);
+
+  const toggleGroupSelect = (id) => {
+    setGroupSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleGroupSelectAll = () => {
+    setGroupSelectedIds(prev => prev.length === groupApplications.length ? [] : groupApplications.map(a => a.id));
+  };
+
+  const exportGroupPDF = async () => {
+    const exportSet = groupSelectedApps.length > 0 ? groupSelectedApps : groupApplications;
+    if (exportSet.length === 0) return alert('No applications match the selected equipment group.');
+
+    const isNarrowed = groupSelectedApps.length > 0;
+    const columns = ["#", "Ref ID", "Name", "Business", "Division", "GS Div", "Equipment", "Brand", "Model", "Qty", "Score", "Total Cost", "Grant", "Dispatch"];
+
+    const rows = exportSet.map((app, i) => {
+      const items = groupItemsOf(app);
+      return [
+        (i + 1).toString(),
+        (app.id || '').substring(0, 8).toUpperCase(),
+        app.personal?.fullName || 'N/A',
+        app.business?.businessName || 'N/A',
+        app.division || '-',
+        app.personal?.gsDivision || '-',
+        items.map(it => it.name).join(', ') || '-',
+        items.map(it => it.brand).filter(Boolean).join(', ') || '-',
+        items.map(it => it.model).filter(Boolean).join(', ') || '-',
+        items.reduce((s, it) => s + (Number(it.qty) || 0), 0).toString(),
+        (app.score || 0).toString(),
+        ((app.equipment?.totalGrant || 0) * 2).toLocaleString(),
+        (app.equipment?.totalGrant || 0).toLocaleString(),
+        app.adminDispatch ? 'Sent to Accounts' : 'Awaiting Dispatch'
+      ];
+    });
+
+    const sums = exportSet.reduce((acc, app) => {
+      const items = groupItemsOf(app);
+      acc.units += items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+      acc.totalCost += (app.equipment?.totalGrant || 0) * 2;
+      acc.totalGrant += app.equipment?.totalGrant || 0;
+      return acc;
+    }, { units: 0, totalCost: 0, totalGrant: 0 });
+
+    const foot = Array(columns.length).fill('');
+    foot[0] = 'TOTAL';
+    foot[9] = String(sums.units);
+    foot[11] = `LKR ${sums.totalCost.toLocaleString()}`;
+    foot[12] = `LKR ${sums.totalGrant.toLocaleString()}`;
+
+    try {
+      await exportTablePDF({
+        title: 'SME Grant System - Equipment Group Procurement List',
+        subtitle: [
+          `Equipment Group: ${equipmentGroup.join(' + ') || 'All'}`,
+          isNarrowed ? `Selected rows only (${exportSet.length} of ${groupApplications.length})` : `${exportSet.length} application(s)`,
+          `Department of Industries Development Uva Province | Report Date: ${new Date().toLocaleString()}`
+        ].join('  |  '),
+        columns,
+        rows,
+        foot,
+        filename: `equipment_group_${new Date().toISOString().split('T')[0]}.pdf`,
+        orientation: 'landscape',
+        format: 'a3'
+      });
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      alert('Error generating PDF.');
+    }
+  };
+
+  const forwardGroupToAccount = async () => {
+    if (groupForwardable.length === 0) {
+      return alert(groupSelectedApps.length > 0
+        ? 'All selected applications have already been forwarded to Accounts.'
+        : 'Please select at least one application awaiting dispatch.');
+    }
+
+    const skipped = groupSelectedApps.length - groupForwardable.length;
+    const message = `Forward ${groupForwardable.length} application(s) to the Accounts / Procurement Department?`
+      + (skipped > 0 ? `\n\n${skipped} already-dispatched application(s) will be skipped.` : '');
+    if (!window.confirm(message)) return;
+
+    setIsSubmitting(true);
+    try {
+      await Promise.all(groupForwardable.map(app =>
+        updateDoc(doc(db, 'applications', app.id), {
+          status: 'approved',
+          adminDispatch: {
+            dispatchedBy: auth.currentUser.email,
+            dispatchedAt: serverTimestamp()
+          },
+          lastUpdated: serverTimestamp()
+        })
+      ));
+      alert(`Forwarded ${groupForwardable.length} application(s) to Accounts successfully!`);
+      setGroupSelectedIds([]);
+      fetchDispatchQueue();
+      fetchApprovedApps();
+    } catch (err) {
+      alert('Error forwarding: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -731,10 +890,236 @@ function AdminModule({ activeTab: externalTab }) {
              activeSubTab === 'sectors' ? 'Regional Sector & Division Management' :
              activeSubTab === 'policy' ? 'Financial Granting Policies' : 
              activeSubTab === 'approval-flow' ? 'Approval Flow Configuration' :
-             activeSubTab === 'dispatch' ? 'Final Dispatch & Account Authorization' : 'Scoring Rubric Configuration'}
+             activeSubTab === 'dispatch' ? 'Final Dispatch & Account Authorization' :
+             activeSubTab === 'equipment-group' ? 'Equipment Group Procurement' : 'Scoring Rubric Configuration'}
           </p>
         </div>
-        {activeSubTab === 'users' && (
+      {activeSubTab === 'equipment-group' && (
+        <div className="animate-fade-in">
+          <div className="glass" style={{ padding: '2rem', borderRadius: '20px', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '2rem', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Equipment Group Procurement</h3>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                  Group similar equipment to review matching applications together, export the group as a PDF, and forward selected rows to Accounts / Procurement.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {groupSelectedIds.length > 0 && (
+                  <button
+                    onClick={forwardGroupToAccount}
+                    disabled={isSubmitting}
+                    style={{ ...addBtnStyle, background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }}
+                  >
+                    <CheckCircle size={18} /> Forward {groupForwardable.length} to Accounts
+                  </button>
+                )}
+                <button
+                  onClick={exportGroupPDF}
+                  disabled={groupApplications.length === 0}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '0.6rem 1rem', borderRadius: '10px', cursor: groupApplications.length === 0 ? 'not-allowed' : 'pointer', opacity: groupApplications.length === 0 ? 0.5 : 1, fontWeight: 600 }}
+                >
+                  <FileText size={18} /> {groupSelectedIds.length > 0 ? `Export Selected (${groupSelectedIds.length}) PDF` : 'Export Group PDF'}
+                </button>
+              </div>
+            </div>
+
+            {/* Equipment group picker */}
+            <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Package size={18} style={{ color: '#3b82f6' }} />
+                  <strong style={{ fontSize: '0.9rem' }}>Select similar equipment to group</strong>
+                  {equipmentGroup.length > 0 && (
+                    <span style={{ fontSize: '0.75rem', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
+                      {equipmentGroup.length} selected
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => { setEquipmentGroup(equipmentGroupOptions.map(o => o.name)); setGroupSelectedIds([]); }}
+                    disabled={equipmentGroupOptions.length === 0}
+                    style={{ ...pageNavBtnStyle, cursor: equipmentGroupOptions.length === 0 ? 'not-allowed' : 'pointer', opacity: equipmentGroupOptions.length === 0 ? 0.5 : 1 }}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    onClick={() => { setEquipmentGroup([]); setGroupSelectedIds([]); }}
+                    disabled={equipmentGroup.length === 0}
+                    style={{ ...pageNavBtnStyle, cursor: equipmentGroup.length === 0 ? 'not-allowed' : 'pointer', opacity: equipmentGroup.length === 0 ? 0.5 : 1 }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {equipmentGroupOptions.length === 0 ? (
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+                  No equipment found in the dispatch queue yet.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                  {equipmentGroupOptions.map(opt => {
+                    const on = equipmentGroup.includes(opt.name);
+                    return (
+                      <button
+                        key={opt.name}
+                        onClick={() => toggleEquipmentGroup(opt.name)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.5rem 0.9rem', borderRadius: '10px', cursor: 'pointer',
+                          background: on ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${on ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                          color: on ? '#93c5fd' : '#94a3b8', fontSize: '0.82rem', fontWeight: 600
+                        }}
+                      >
+                        {on && <CheckCircle size={14} />}
+                        {opt.name}
+                        <span style={{ fontSize: '0.7rem', opacity: 0.7, background: 'rgba(0,0,0,0.25)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>{opt.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Search + summary */}
+            <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', flexGrow: 1, minWidth: '250px' }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} />
+                <input
+                  type="text"
+                  placeholder="Search name, business, GS division or ID..."
+                  value={groupSearch}
+                  onChange={e => setGroupSearch(e.target.value)}
+                  style={{ ...searchStyle, background: 'rgba(0,0,0,0.2)' }}
+                />
+              </div>
+              {equipmentGroup.length > 0 && (
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Applications: <strong style={{ color: '#e2e8f0' }}>{groupApplications.length}</strong></span>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Line items: <strong style={{ color: '#e2e8f0' }}>{groupTotals.itemCount}</strong></span>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Units: <strong style={{ color: '#e2e8f0' }}>{groupTotals.units}</strong></span>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Project cost: <strong style={{ color: '#e2e8f0' }}>LKR {groupTotals.totalCost.toLocaleString()}</strong></span>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Grant: <strong style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</strong></span>
+                </div>
+              )}
+            </div>
+
+            {equipmentGroup.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                <Package size={48} style={{ opacity: 0.1, marginBottom: '1rem' }} />
+                <h3 style={{ margin: '0 0 0.5rem', color: '#94a3b8' }}>No Equipment Group Selected</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem' }}>Pick one or more equipment types above to filter the applications.</p>
+              </div>
+            ) : groupApplications.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                <Search size={48} style={{ opacity: 0.1, marginBottom: '1rem' }} />
+                <h3 style={{ margin: '0 0 0.5rem', color: '#94a3b8' }}>No Matching Applications</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem' }}>No applications in the queue match this equipment group and search.</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+                  <button onClick={toggleGroupSelectAll} style={pageNavBtnStyle}>
+                    {groupSelectedIds.length === groupApplications.length ? 'Deselect all rows' : `Select all ${groupApplications.length} rows`}
+                  </button>
+                  {groupSelectedIds.length > 0 && (
+                    <span style={{ fontSize: '0.8rem', color: '#3b82f6' }}>
+                      {groupSelectedIds.length} row(s) selected
+                      {groupForwardable.length < groupSelectedIds.length && ` (${groupSelectedIds.length - groupForwardable.length} already dispatched)`}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1900px' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <th style={thStyle}>Select</th>
+                        <th style={thStyle}>#</th>
+                        <th style={thStyle}>Name</th>
+                        <th style={thStyle}>Business</th>
+                        <th style={thStyle}>Division</th>
+                        <th style={thStyle}>GS Division</th>
+                        <th style={thStyle}>Equipment</th>
+                        <th style={thStyle}>Brand</th>
+                        <th style={thStyle}>Model</th>
+                        <th style={thStyle}>Qty</th>
+                        <th style={thStyle}>Score</th>
+                        <th style={thStyle}>Total Cost</th>
+                        <th style={thStyle}>Grant</th>
+                        <th style={thStyle}>Dispatch</th>
+                        <th style={thStyle}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupApplications.map((app, idx) => {
+                        const items = groupItemsOf(app);
+                        const granted = app.score || 0;
+                        const cost = (app.equipment?.totalGrant || 0) * 2;
+                        const grant = app.equipment?.totalGrant || 0;
+                        const dispatched = !!app.adminDispatch;
+                        const checked = groupSelectedIds.includes(app.id);
+                        return (
+                          <tr key={app.id} className="row-hover" style={{ background: checked ? 'rgba(59,130,246,0.07)' : 'transparent' }}>
+                            <td style={tdStyle}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleGroupSelect(app.id)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                            </td>
+                            <td style={tdStyle}>{idx + 1}</td>
+                            <td style={tdStyle}><strong>{app.personal?.fullName || 'N/A'}</strong></td>
+                            <td style={tdStyle}>{app.business?.businessName || 'N/A'}</td>
+                            <td style={tdStyle}>{app.division || '-'}</td>
+                            <td style={tdStyle}>{app.personal?.gsDivision || '-'}</td>
+                            <td style={tdStyle}>{items.map(it => it.name).join(', ')}</td>
+                            <td style={tdStyle}>{items.map(it => it.brand).filter(Boolean).join(', ') || '-'}</td>
+                            <td style={tdStyle}>{items.map(it => it.model).filter(Boolean).join(', ') || '-'}</td>
+                            <td style={tdStyle}>{items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}</td>
+                            <td style={tdStyle}><span style={{ color: granted >= 50 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>{granted}</span></td>
+                            <td style={tdStyle}>LKR {cost.toLocaleString()}</td>
+                            <td style={tdStyle}><span style={{ color: '#10b981', fontWeight: 700 }}>LKR {grant.toLocaleString()}</span></td>
+                            <td style={tdStyle}>
+                              <span style={{
+                                fontSize: '0.7rem', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '20px',
+                                background: dispatched ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                                color: dispatched ? '#10b981' : '#f59e0b'
+                              }}>
+                                {dispatched ? 'Sent to Accounts' : 'Awaiting Dispatch'}
+                              </span>
+                            </td>
+                            <td style={tdStyle}>
+                              <button
+                                onClick={() => setSelectedApp(app)}
+                                style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600 }}
+                              >
+                                <Eye size={16} /> View
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'rgba(255,255,255,0.04)', fontWeight: 700 }}>
+                        <td style={tdStyle} colSpan={9}>TOTAL</td>
+                        <td style={tdStyle}>{groupTotals.units}</td>
+                        <td style={tdStyle}>-</td>
+                        <td style={tdStyle}>LKR {groupTotals.totalCost.toLocaleString()}</td>
+                        <td style={tdStyle}><span style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</span></td>
+                        <td style={tdStyle} colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'users' && (
+
           <button onClick={() => setIsModalOpen(true)} style={addBtnStyle}>
             <UserPlus size={20} /> Add Staff Member
           </button>

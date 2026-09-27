@@ -52,7 +52,7 @@ function Dashboard({ language = 'en', setLanguage }) {
     if (normalizedRole === 'admin' && activeTab === 'overview') {
       return <AdminDashboard language={language} />;
     }
-    if (normalizedRole === 'admin' && (['users', 'records', 'sectors', 'policy', 'scoring', 'scoring-board', 'dispatch', 'approval-flow'].includes(activeTab))) {
+    if (normalizedRole === 'admin' && (['users', 'records', 'sectors', 'policy', 'scoring', 'scoring-board', 'dispatch', 'equipment-group', 'approval-flow'].includes(activeTab))) {
       return <AdminModule activeTab={activeTab} />;
     }
 
@@ -75,6 +75,7 @@ function Dashboard({ language = 'en', setLanguage }) {
       case 'scoring-board':
       case 'approval-flow':
       case 'dispatch':
+      case 'equipment-group':
         return <AdminModule activeTab={activeTab} />;
       case 'new-app':
         return <DOModule initialData={editingApp} onComplete={() => setEditingApp(null)} language={language} />;

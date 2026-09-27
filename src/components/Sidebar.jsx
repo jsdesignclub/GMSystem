@@ -17,7 +17,8 @@ import {
   Briefcase,
   Shield,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Package
 } from 'lucide-react';
 
 function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole, language = 'en', isCollapsed, onToggleCollapse }) {
@@ -73,6 +74,7 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
     { id: 'scoring-board', title: getTranslation('sidebar.masterScoreBoard', language), icon: <List size={20} /> },
     { id: 'approval-flow', title: getTranslation('sidebar.approvalFlow', language), icon: <Settings size={20} /> },
     { id: 'dispatch', title: getTranslation('sidebar.dispatchControl', language), icon: <CheckCircle size={20} /> },
+    { id: 'equipment-group', title: getTranslation('sidebar.equipmentGrouping', language), icon: <Package size={20} /> },
     { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }
   ] : [
     { id: 'overview', title: getTranslation('sidebar.overview', language), icon: <Home size={20} /> },

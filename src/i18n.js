@@ -135,6 +135,7 @@ const translations = {
       masterScoreBoard: 'Master Score board',
       approvalFlow: 'Approval Flow',
       dispatchControl: 'Dispatch Control',
+      equipmentGrouping: 'Equipment Grouping',
       signOut: 'Sign Out'
     },
     application: {
@@ -420,6 +421,7 @@ const translations = {
       masterScoreBoard: 'මූලික ලකුණු පුවරුව',
       approvalFlow: 'අනුමැතිය ප්‍රවාහය',
       dispatchControl: 'බෙදාහැරීම පාලනය',
+      equipmentGrouping: 'උපකරණ කණ්ඩායම කිරීම',
       signOut: 'පිටවෙන්න'
     },
     application: {
