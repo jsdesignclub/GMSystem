@@ -1,15 +1,23 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Filter, List, Package, ChevronDown } from 'lucide-react';
+import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
 import { generateApplicationPDF } from '../utils/generateApplicationPDF';
 import { generateSinhalaApplicationPDF } from '../utils/generateSinhalaApplicationPDF';
+import {
+  EQUIPMENT_GROUPS_COLLECTION,
+  buildEquipmentOptions,
+  matchGroupItems,
+  filterAppsByEquipmentGroup,
+  computeGroupTotals,
+  exportEquipmentGroupPDF
+} from '../utils/equipmentGroups';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' };
 const tdStyle = { padding: '1.2rem 1.5rem' };
@@ -75,6 +83,11 @@ function AdminModule({ activeTab: externalTab }) {
   const equipPickerRef = useRef(null);
   const [pdfLoading, setPdfLoading] = useState('');
   const [equipmentGroup, setEquipmentGroup] = useState([]);
+  const [equipmentGroups, setEquipmentGroups] = useState([]);
+  const [groupName, setGroupName] = useState('');
+  const [activeGroupId, setActiveGroupId] = useState('');
+  const [groupLoadError, setGroupLoadError] = useState('');
+  const [groupDiagnostics, setGroupDiagnostics] = useState([]);
   const [equipPickerOpen, setEquipPickerOpen] = useState(false);
   const [equipPickerSearch, setEquipPickerSearch] = useState('');
   const [groupSelectedIds, setGroupSelectedIds] = useState([]);
@@ -323,23 +336,80 @@ function AdminModule({ activeTab: externalTab }) {
   };
 
   // --- Equipment Group Procurement -------------------------------------------------
+  const fetchEquipmentGroups = async () => {
+    try {
+      const snap = await getDocs(collection(db, EQUIPMENT_GROUPS_COLLECTION));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setEquipmentGroups(list.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      setGroupLoadError('');
+    } catch (err) {
+      console.error('Error loading equipment groups:', err);
+      setGroupLoadError(err?.code === 'permission-denied'
+        ? 'Firestore denied access to the "equipment_groups" collection. The rules for this collection have not been deployed yet, so groups cannot be listed, saved or deleted.'
+        : 'Could not load saved equipment groups: ' + err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchEquipmentGroups();
+  }, []);
+
+  // When the equipment_groups rules are wrong there is nothing to click and
+  // nothing useful in the console, so surface the actual cause in the UI.
+  useEffect(() => {
+    if (!groupLoadError || groupDiagnostics.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      const out = [];
+      const uid = auth.currentUser?.uid || null;
+      out.push(`signed in: ${auth.currentUser?.email || 'NO USER'}`);
+      out.push(`uid: ${uid || 'none'}`);
+
+      if (uid) {
+        try {
+          const me = await getDoc(doc(db, 'users', uid));
+          const d = me.data() || {};
+          out.push(`users/{uid} exists: ${me.exists()}`);
+          out.push(`role raw value: ${JSON.stringify(d.role)}`);
+          out.push(`status raw value: ${JSON.stringify(d.status)}`);
+        } catch (e) {
+          out.push(`users/{uid} READ FAILED: ${e.code}`);
+        }
+      }
+
+      for (const name of ['settings_divisions', 'equipment_groups']) {
+        try {
+          const s = await getDocs(collection(db, name));
+          out.push(`read ${name}: OK (${s.size} docs)`);
+        } catch (e) {
+          out.push(`read ${name}: ${e.code}`);
+        }
+      }
+
+      try {
+        await setDoc(doc(db, EQUIPMENT_GROUPS_COLLECTION, '__permission_probe__'), { probe: true });
+        out.push('write equipment_groups: OK');
+        await deleteDoc(doc(db, EQUIPMENT_GROUPS_COLLECTION, '__permission_probe__'));
+        out.push('probe cleaned up');
+      } catch (e) {
+        out.push(`write equipment_groups: ${e.code}`);
+      }
+
+      if (!cancelled) setGroupDiagnostics(out);
+    })();
+    return () => { cancelled = true; };
+  }, [groupLoadError, groupDiagnostics.length]);
+
   // Equipment names available to group, with how many queued applications requested each.
-  const equipmentGroupOptions = useMemo(() => {
-    const counts = new Map();
-    dispatchQueue.forEach(app => {
-      (app.equipment?.items || []).forEach(item => {
-        if (!item?.name) return;
-        counts.set(item.name, (counts.get(item.name) || 0) + 1);
-      });
-    });
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [dispatchQueue]);
+  const equipmentGroupOptions = useMemo(
+    () => buildEquipmentOptions(dispatchQueue),
+    [dispatchQueue]
+  );
 
   const toggleEquipmentGroup = (name) => {
     setEquipmentGroup(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
     setGroupSelectedIds([]);
+    setActiveGroupId('');
   };
 
   // Equipment options narrowed by the dropdown's own search box
@@ -373,35 +443,21 @@ function AdminModule({ activeTab: externalTab }) {
   }, [equipPickerOpen]);
 
   // Items of an application that fall inside the selected group
-  const groupItemsOf = (app) => (app.equipment?.items || [])
-    .filter(item => equipmentGroup.includes(item.name));
+  const groupItemsOf = (app) => matchGroupItems(app, equipmentGroup);
 
-  const groupApplications = useMemo(() => {
-    if (equipmentGroup.length === 0) return [];
-    const search = groupSearch.trim().toLowerCase();
-    return dispatchQueue
-      .filter(app => groupItemsOf(app).length > 0)
-      .filter(app => !search
-        || (app.personal?.fullName || '').toLowerCase().includes(search)
-        || (app.business?.businessName || '').toLowerCase().includes(search)
-        || (app.personal?.gsDivision || '').toLowerCase().includes(search)
-        || (app.id || '').toLowerCase().includes(search))
-      .sort((a, b) => (a.personal?.fullName || '').localeCompare(b.personal?.fullName || ''));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatchQueue, equipmentGroup, groupSearch]);
+  const groupApplications = useMemo(
+    () => filterAppsByEquipmentGroup(dispatchQueue, equipmentGroup, groupSearch),
+    [dispatchQueue, equipmentGroup, groupSearch]
+  );
 
-  const groupTotals = useMemo(() => groupApplications.reduce((acc, app) => {
-    const items = groupItemsOf(app);
-    acc.itemCount += items.length;
-    acc.units += items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
-    acc.itemCost += items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
-    acc.totalCost += (app.equipment?.totalGrant || 0) * 2;
-    acc.totalGrant += app.equipment?.totalGrant || 0;
-    return acc;
-  }, { itemCount: 0, units: 0, itemCost: 0, totalCost: 0, totalGrant: 0 }), [groupApplications]);
+  const groupTotals = useMemo(
+    () => computeGroupTotals(groupApplications, equipmentGroup),
+    [groupApplications, equipmentGroup]
+  );
 
   const groupSelectedApps = groupApplications.filter(app => groupSelectedIds.includes(app.id));
   const groupForwardable = groupSelectedApps.filter(app => !app.adminDispatch);
+  const activeGroupName = equipmentGroups.find(g => g.id === activeGroupId)?.name || '';
 
   const toggleGroupSelect = (id) => {
     setGroupSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -411,65 +467,120 @@ function AdminModule({ activeTab: externalTab }) {
     setGroupSelectedIds(prev => prev.length === groupApplications.length ? [] : groupApplications.map(a => a.id));
   };
 
+  const saveEquipmentGroup = async () => {
+    const name = groupName.trim();
+    if (!name) return alert('Please enter a name for the equipment group.');
+    if (equipmentGroup.length === 0) return alert('Please select at least one equipment category for the group.');
+
+    const duplicate = equipmentGroups.find(g => (g.name || '').toLowerCase() === name.toLowerCase());
+    if (duplicate) return alert(`A group named "${name}" already exists.`);
+
+    setIsSubmitting(true);
+    try {
+      const created = await addDoc(collection(db, EQUIPMENT_GROUPS_COLLECTION), {
+        name,
+        items: [...equipmentGroup].sort((a, b) => a.localeCompare(b)),
+        createdBy: auth.currentUser?.email || 'unknown',
+        createdAt: serverTimestamp()
+      });
+      setGroupName('');
+      await fetchEquipmentGroups();
+      setActiveGroupId(created.id);
+      alert(`Equipment group "${name}" saved. It is now available to the Accounts department.`);
+    } catch (err) {
+      if (err?.code === 'permission-denied') {
+        setGroupLoadError('Firestore denied this write. The "equipment_groups" collection is missing from your security rules, or this account is not an admin.');
+      }
+      alert('Error saving group: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const applyEquipmentGroup = (group) => {
+    setEquipmentGroup([...(group.items || [])]);
+    setGroupSelectedIds([]);
+    setGroupSearch('');
+    setEquipPickerOpen(false);
+    setEquipPickerSearch('');
+    setActiveGroupId(group.id);
+  };
+
+  const deleteEquipmentGroup = async (group) => {
+    if (!window.confirm(`Delete the equipment group "${group.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, EQUIPMENT_GROUPS_COLLECTION, group.id));
+      await fetchEquipmentGroups();
+    } catch (err) {
+      if (err?.code === 'permission-denied') {
+        setGroupLoadError('Firestore denied this delete. The "equipment_groups" collection is missing from your security rules, or this account is not an admin.');
+      }
+      alert('Error deleting group: ' + err.message);
+    }
+  };
+
   const exportGroupPDF = async () => {
     const exportSet = groupSelectedApps.length > 0 ? groupSelectedApps : groupApplications;
-    if (exportSet.length === 0) return alert('No applications match the selected equipment group.');
-
-    const isNarrowed = groupSelectedApps.length > 0;
-    const columns = ["#", "Ref ID", "Name", "Business", "Division", "GS Div", "Equipment", "Brand", "Model", "Qty", "Score", "Total Cost", "Grant", "Dispatch"];
-
-    const rows = exportSet.map((app, i) => {
-      const items = groupItemsOf(app);
-      return [
-        (i + 1).toString(),
-        (app.id || '').substring(0, 8).toUpperCase(),
-        app.personal?.fullName || 'N/A',
-        app.business?.businessName || 'N/A',
-        app.division || '-',
-        app.personal?.gsDivision || '-',
-        items.map(it => it.name).join(', ') || '-',
-        items.map(it => it.brand).filter(Boolean).join(', ') || '-',
-        items.map(it => it.model).filter(Boolean).join(', ') || '-',
-        items.reduce((s, it) => s + (Number(it.qty) || 0), 0).toString(),
-        (app.score || 0).toString(),
-        ((app.equipment?.totalGrant || 0) * 2).toLocaleString(),
-        (app.equipment?.totalGrant || 0).toLocaleString(),
-        app.adminDispatch ? 'Sent to Accounts' : 'Awaiting Dispatch'
-      ];
+    const onlySelected = groupSelectedApps.length > 0;
+    await exportEquipmentGroupPDF({
+      apps: exportSet,
+      items: equipmentGroup,
+      groupName: activeGroupName || 'Ad-hoc selection',
+      onlySelected,
+      totalAvailable: groupApplications.length
     });
+  };
 
-    const sums = exportSet.reduce((acc, app) => {
-      const items = groupItemsOf(app);
-      acc.units += items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
-      acc.totalCost += (app.equipment?.totalGrant || 0) * 2;
-      acc.totalGrant += app.equipment?.totalGrant || 0;
-      return acc;
-    }, { units: 0, totalCost: 0, totalGrant: 0 });
+  // Export a saved group directly, without disturbing the current on-screen selection
+  const exportSavedGroupPDF = async (group) => {
+    const items = group.items || [];
+    if (items.length === 0) {
+      return alert(`The group "${group.name}" has no equipment categories saved.`);
+    }
+    const apps = filterAppsByEquipmentGroup(dispatchQueue, items, '');
+    if (apps.length === 0) {
+      return alert(`No applications in the dispatch queue match the group "${group.name}".`);
+    }
+    await exportEquipmentGroupPDF({
+      apps,
+      items,
+      groupName: group.name,
+      onlySelected: false,
+      totalAvailable: apps.length
+    });
+  };
 
-    const foot = Array(columns.length).fill('');
-    foot[0] = 'TOTAL';
-    foot[9] = String(sums.units);
-    foot[11] = `LKR ${sums.totalCost.toLocaleString()}`;
-    foot[12] = `LKR ${sums.totalGrant.toLocaleString()}`;
+  // Forward every application in the current group selection, not just ticked rows
+  const forwardWholeGroupToAccount = async () => {
+    const forwardable = groupApplications.filter(app => !app.adminDispatch);
+    if (forwardable.length === 0) {
+      return alert('Every application in this group has already been forwarded to Accounts.');
+    }
+    const alreadySent = groupApplications.length - forwardable.length;
+    const message = `Forward all ${forwardable.length} application(s) in this equipment group to Accounts / Procurement?`
+      + (alreadySent > 0 ? `\n\n${alreadySent} already-dispatched application(s) will be skipped.` : '');
+    if (!window.confirm(message)) return;
 
+    setIsSubmitting(true);
     try {
-      await exportTablePDF({
-        title: 'SME Grant System - Equipment Group Procurement List',
-        subtitle: [
-          `Equipment Group: ${equipmentGroup.join(' + ') || 'All'}`,
-          isNarrowed ? `Selected rows only (${exportSet.length} of ${groupApplications.length})` : `${exportSet.length} application(s)`,
-          `Department of Industries Development Uva Province | Report Date: ${new Date().toLocaleString()}`
-        ].join('  |  '),
-        columns,
-        rows,
-        foot,
-        filename: `equipment_group_${new Date().toISOString().split('T')[0]}.pdf`,
-        orientation: 'landscape',
-        format: 'a3'
-      });
+      await Promise.all(forwardable.map(app =>
+        updateDoc(doc(db, 'applications', app.id), {
+          status: 'approved',
+          adminDispatch: {
+            dispatchedBy: auth.currentUser.email,
+            dispatchedAt: serverTimestamp()
+          },
+          lastUpdated: serverTimestamp()
+        })
+      ));
+      alert(`Forwarded ${forwardable.length} application(s) to Accounts successfully!`);
+      setGroupSelectedIds([]);
+      fetchDispatchQueue();
+      fetchApprovedApps();
     } catch (err) {
-      console.error('PDF Export Error:', err);
-      alert('Error generating PDF.');
+      alert('Error forwarding: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1105,6 +1216,130 @@ function AdminModule({ activeTab: externalTab }) {
                   )}
                 </>
               )}
+            </div>
+
+            {/* Custom equipment group builder */}
+            <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <FolderPlus size={18} style={{ color: '#a855f7' }} />
+                <strong style={{ fontSize: '0.9rem' }}>Create a custom equipment group</strong>
+              </div>
+
+              {groupLoadError && (
+                <div style={{
+                  marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '10px',
+                  background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)',
+                  color: '#fda4af', fontSize: '0.8rem', lineHeight: 1.5
+                }}>
+                  {groupLoadError}
+
+                  {groupDiagnostics.length > 0 && (
+                    <details style={{ marginTop: '0.6rem' }}>
+                      <summary style={{ cursor: 'pointer', color: '#fb7185', fontWeight: 600 }}>
+                        Diagnostics — click to expand
+                      </summary>
+                      <pre style={{
+                        margin: '0.6rem 0 0', padding: '0.7rem', borderRadius: '8px',
+                        background: 'rgba(0,0,0,0.35)', color: '#e2e8f0', fontSize: '0.72rem',
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'ui-monospace, monospace'
+                      }}>
+                        {groupDiagnostics.join('\n')}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flexGrow: 1, minWidth: '250px' }}>
+                  <label style={labelStyle}>Group name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Water Pump Procurement"
+                    value={groupName}
+                    onChange={e => setGroupName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEquipmentGroup(); }}
+                    style={inputStyle}
+                  />
+                </div>
+                <button
+                  onClick={saveEquipmentGroup}
+                  disabled={isSubmitting}
+                  style={{ ...addBtnStyle, background: 'linear-gradient(135deg, #7e22ce 0%, #a855f7 100%)', opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+                >
+                  <Save size={16} /> {isSubmitting ? 'Saving...' : 'Create Group'}
+                </button>
+              </div>
+
+              <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                {equipmentGroup.length === 0
+                  ? 'Pick the relevant equipment categories from the dropdown above, then give the group a name.'
+                  : `Saves the ${equipmentGroup.length} equipment categor${equipmentGroup.length === 1 ? 'y' : 'ies'} selected above: ${equipmentGroup.join(', ')}`}
+              </p>
+
+              {/* Saved groups */}
+              <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.9rem' }}>
+                  <Layers size={16} style={{ color: '#64748b' }} />
+                  <strong style={{ fontSize: '0.85rem' }}>Saved groups</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#a855f7', background: 'rgba(168,85,247,0.1)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
+                    {equipmentGroups.length}
+                  </span>
+                </div>
+
+                {equipmentGroups.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>No custom groups saved yet.</p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.9rem' }}>
+                    {equipmentGroups.map(group => {
+                      const isActive = group.id === activeGroupId;
+                      const groupItems = group.items || [];
+                      return (
+                        <div
+                          key={group.id}
+                          style={{
+                            padding: '1rem', borderRadius: '12px',
+                            background: isActive ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.2)',
+                            border: `1px solid ${isActive ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.06)'}`
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                            <strong style={{ fontSize: '0.9rem', color: isActive ? '#e9d5ff' : '#e2e8f0' }}>{group.name}</strong>
+                            <button
+                              onClick={() => deleteEquipmentGroup(group)}
+                              title={`Delete ${group.name}`}
+                              style={{ background: 'transparent', border: 'none', color: '#f43f5e', cursor: 'pointer', opacity: 0.6, display: 'flex', padding: 0, flexShrink: 0 }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+
+                          <p style={{ margin: '0.5rem 0 0.8rem', fontSize: '0.75rem', color: '#64748b', lineHeight: 1.5 }}>
+                            {groupItems.length} categor{groupItems.length === 1 ? 'y' : 'ies'}: {groupItems.join(', ') || 'None'}
+                          </p>
+
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                              onClick={() => applyEquipmentGroup(group)}
+                              style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.35rem 0.7rem', color: isActive ? '#c084fc' : '#94a3b8', cursor: 'pointer' }}
+                            >
+                              <CheckCircle size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                              {isActive ? 'Active' : 'Apply'}
+                            </button>
+                            <button
+                              onClick={() => exportSavedGroupPDF(group)}
+                              style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.35rem 0.7rem', color: '#a855f7', cursor: 'pointer' }}
+                            >
+                              <FileText size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                              Export PDF
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Search + summary */}
