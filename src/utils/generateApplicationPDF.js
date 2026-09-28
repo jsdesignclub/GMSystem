@@ -1,5 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getQualificationLabel } from './qualification';
+import { getScoreBreakdownTable } from './scoreBreakdown';
 
 export function generateApplicationPDF(app) {
   const doc = new jsPDF('p', 'mm', 'a4');
@@ -122,10 +124,8 @@ export function generateApplicationPDF(app) {
   field('Business Sector', b.sector);
 
   sectionTitle('3. Training & Qualifications');
-  field('NVQ Level', t.nvqLevel);
-  field('Highest Degree', t.degree);
+  field('Highest Qualification', getQualificationLabel(t));
   field('Years of Experience', t.experienceYears);
-  field('Other Training', t.otherTraining);
   field('Regional Award', t.awardRegional ? 'Yes' : 'No');
   field('District Award', t.awardDistrict ? 'Yes' : 'No');
   field('National Award', t.awardNational ? 'Yes' : 'No');
@@ -180,24 +180,36 @@ export function generateApplicationPDF(app) {
 
   if (app.scoreBreakdown) {
     sectionTitle('6. Score Breakdown');
-    const sb = app.scoreBreakdown;
-    const sbData = [
-      ['Business Stability & Growth', `${sb.businessStability || 0} / 25`],
-      ['Professional Competency', `${sb.professionalCompetency || 0} / 25`],
-      ['Household Status & Social', `${sb.householdStatus || 0} / 15`],
-      ['Economic Contribution & Innovation', `${sb.economicContribution || 0} / 25`],
-      ['Special Awards & Recognition', `${sb.specialAwards || 0} / 10`],
-      ['Total Score', `${app.score || 0} / 100`]
-    ];
+    const table = getScoreBreakdownTable(app, 'en') || [];
+    const rows = [];
+    table.forEach((cat) => {
+      rows.push([
+        { content: cat.label, styles: { fontStyle: 'bold', textColor: [31, 78, 121] } },
+        { content: `${cat.total} / ${cat.max}`, styles: { fontStyle: 'bold', textColor: [31, 78, 121], halign: 'right' } }
+      ]);
+      cat.items.forEach((it) => {
+        rows.push([
+          { content: `      - ${it.label}`, styles: { fontSize: 8.5 } },
+          { content: `+${it.score}`, styles: { fontSize: 8.5, halign: 'right' } }
+        ]);
+      });
+    });
+    rows.push([
+      { content: 'Total Score', styles: { fontStyle: 'bold' } },
+      { content: `${app.score || 0} / 100`, styles: { fontStyle: 'bold', halign: 'right' } }
+    ]);
     autoTable(doc, {
       startY: y + 2,
-      head: [['Category', 'Points']],
-      body: sbData,
-      theme: 'grid',
+      head: [[
+        { content: 'Category', styles: { halign: 'left' } },
+        { content: 'Points', styles: { halign: 'right' } }
+      ]],
+      body: rows,
+      theme: 'plain',
       headStyles: { fillColor: [31, 78, 121], textColor: [255, 255, 255], fontSize: 8 },
-      styles: { fontSize: 9, cellPadding: 3 },
-      margin: { left: margin, right: margin },
-      footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' }
+      styles: { fontSize: 9, cellPadding: { top: 1, bottom: 1, left: 3, right: 3 } },
+      columnStyles: { 1: { cellWidth: 40 } },
+      margin: { left: margin, right: margin }
     });
     y = doc.lastAutoTable.finalY + 10;
   }

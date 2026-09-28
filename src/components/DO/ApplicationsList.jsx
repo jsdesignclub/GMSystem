@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { generateApplicationPDF } from '../../utils/generateApplicationPDF';
 import { generateSinhalaApplicationPDF } from '../../utils/generateSinhalaApplicationPDF';
 import { calculateScore } from '../../utils/calculateScore';
+import { getQualificationLabel } from '../../utils/qualification';
 import { exportCSV, exportTablePDF } from '../../utils/exportUtils';
 
 function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false, language = 'en' }) {
@@ -605,8 +606,7 @@ function ApplicationsList({ statusFilter = 'all', onEdit, isCompact = false, lan
  
               <div>
                 <DetailSection icon={<GraduationCap size={18}/>} title="Eligibility Metrics">
-                  <p><strong>NVQ Professional Level:</strong> {selectedApp.training?.nvqLevel || 'N/A'}</p>
-                  <p><strong>Educational Degree:</strong> {selectedApp.training?.degree || 'N/A'}</p>
+                  <p><strong>Highest Qualification:</strong> {getQualificationLabel(selectedApp.training, language) || 'N/A'}</p>
                   <p><strong>System Score:</strong> <span style={{ color: '#10b981', fontWeight: 800 }}>{selectedApp.score || 0} Points</span></p>
                   {(() => {
                     const { detailed } = calculateScore(selectedApp);

@@ -1,5 +1,7 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { getQualificationLabel } from './qualification';
+import { getScoreBreakdownTable } from './scoreBreakdown';
 
 const si = {
   title: '50% දායකත්වය යටතේ ස්වං රැකියා උපකරණ ලබා දීම',
@@ -37,10 +39,8 @@ const si = {
   employeeCount: 'සේවක සංඛ්\u200Dයාව',
   hasBookkeeping: 'ගිණුම් පොත් පවත්වාගෙන යනවාද',
   sector: 'ව්\u200Dයාපාර අංශය',
-  nvqLevel: 'NVQ මට්ටම',
-  degree: 'උපාධිය',
+  qualification: 'උසස් සුදුසුකම',
   experienceYears: 'පළපුරුද්ද (වසර)',
-  otherTraining: 'වෙනත් පුහුණුව',
   awardRegional: 'ප්\u200Dරාදේශීය සම්මාන',
   awardDistrict: 'දිස්ත්\u200Dරික් සම්මාන',
   awardNational: 'ජාතික සම්මාන',
@@ -90,7 +90,7 @@ const si = {
 };
 
 function esc(t) {
-  if (t === undefined || t === null) return si.na;
+  if (t === undefined || t === null || t === '') return si.na;
   const d = document.createElement('div');
   d.textContent = String(t);
   return d.innerHTML;
@@ -162,10 +162,8 @@ export async function generateSinhalaApplicationPDF(app) {
   r += row(si.sector, b.sector);
 
   r += sec(si.section3);
-  r += row(si.nvqLevel, t.nvqLevel);
-  r += row(si.degree, t.degree);
+  r += row(si.qualification, getQualificationLabel(t, 'si'));
   r += row(si.experienceYears, t.experienceYears);
-  r += row(si.otherTraining, t.otherTraining);
   r += row(si.awardRegional, yn(t.awardRegional));
   r += row(si.awardDistrict, yn(t.awardDistrict));
   r += row(si.awardNational, yn(t.awardNational));
@@ -215,13 +213,13 @@ export async function generateSinhalaApplicationPDF(app) {
 
   if (app.scoreBreakdown) {
     r += sec(si.section6);
-    const sb = app.scoreBreakdown;
-    [['Business Stability & Growth', sb.businessStability, 25],
-     ['Professional Competency', sb.professionalCompetency, 25],
-     ['Household Status & Social', sb.householdStatus, 15],
-     ['Economic Contribution & Innovation', sb.economicContribution, 25],
-     ['Special Awards & Recognition', sb.specialAwards, 10]].forEach(([n, v, m]) => {
-      r += row(n, `${v || 0} / ${m}`);
+    const table = getScoreBreakdownTable(app, 'si') || [];
+    const indent = '\u00A0\u00A0\u00A0\u00A0\u00A0- ';
+    table.forEach((cat) => {
+      r += row(cat.label, `${cat.total} / ${cat.max}`);
+      cat.items.forEach((it) => {
+        r += row(indent + it.label, `+${it.score}`);
+      });
     });
     r += row(si.totalScore, `${app.score || 0} / 100`);
   }
