@@ -4,7 +4,7 @@ import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc,
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save } from 'lucide-react';
+import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save, Plus } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
@@ -86,6 +86,7 @@ function AdminModule({ activeTab: externalTab }) {
   const [equipmentGroups, setEquipmentGroups] = useState([]);
   const [groupName, setGroupName] = useState('');
   const [activeGroupId, setActiveGroupId] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [groupLoadError, setGroupLoadError] = useState('');
   const [groupDiagnostics, setGroupDiagnostics] = useState([]);
   const [equipPickerOpen, setEquipPickerOpen] = useState(false);
@@ -400,10 +401,25 @@ function AdminModule({ activeTab: externalTab }) {
     return () => { cancelled = true; };
   }, [groupLoadError, groupDiagnostics.length]);
 
+  // Categories already locked into a saved group. They are never offered in the
+  // picker again, so one category can never belong to two groups. The group whose
+  // name is currently selected (active) is excluded so its own categories behave
+  // like the in-progress box items (removing one returns it to the dropdown).
+  const assignedCategories = useMemo(
+    () => new Set(
+      equipmentGroups
+        .filter(g => g.id !== activeGroupId)
+        .flatMap(g => g.items || [])
+    ),
+    [equipmentGroups, activeGroupId]
+  );
+
   // Equipment names available to group, with how many queued applications requested each.
+  // Categories assigned to an existing saved group are hidden from the picker, leaving
+  // only the ones still to be grouped (nothing can be missed or duplicated).
   const equipmentGroupOptions = useMemo(
-    () => buildEquipmentOptions(dispatchQueue),
-    [dispatchQueue]
+    () => buildEquipmentOptions(dispatchQueue).filter(o => !assignedCategories.has(o.name)),
+    [dispatchQueue, assignedCategories]
   );
 
   const toggleEquipmentGroup = (name) => {
@@ -412,12 +428,102 @@ function AdminModule({ activeTab: externalTab }) {
     setActiveGroupId('');
   };
 
+  // Persist the changed item list of a managed (selected) saved group.
+  const persistGroupChange = async (groupId, nextItems) => {
+    try {
+      await updateDoc(doc(db, EQUIPMENT_GROUPS_COLLECTION, groupId), {
+        items: [...nextItems].sort((a, b) => a.localeCompare(b)),
+        updatedBy: auth.currentUser?.email || 'unknown',
+        updatedAt: serverTimestamp()
+      });
+      await fetchEquipmentGroups();
+    } catch (err) {
+      if (err?.code === 'permission-denied') {
+        setGroupLoadError('Firestore denied this update. The "equipment_groups" collection is missing from your security rules, or this account is not an admin.');
+      }
+      alert('Error saving changes: ' + err.message);
+    }
+  };
+
+  // Add one category: if a saved group is selected (active), it is saved to that
+  // group immediately; otherwise it stays in the box as a new-group selection.
+  const addToGroup = async (name) => {
+    if (activeGroupId) {
+      if (equipmentGroup.includes(name)) return;
+      const next = [...equipmentGroup, name];
+      setEquipmentGroup(next);
+      await persistGroupChange(activeGroupId, next);
+    } else {
+      toggleEquipmentGroup(name);
+    }
+  };
+
+  // Remove one category from the box. If a saved group is selected (active), the
+  // removal is saved immediately and the category returns to the dropdown.
+  const removeFromGroup = async (name) => {
+    if (activeGroupId) {
+      const next = equipmentGroup.filter(n => n !== name);
+      setEquipmentGroup(next);
+      await persistGroupChange(activeGroupId, next);
+    } else {
+      toggleEquipmentGroup(name);
+    }
+  };
+
+  const addAllAvailable = async () => {
+    const names = equipPickerOptions.map(o => o.name).filter(n => !equipmentGroup.includes(n));
+    setGroupSelectedIds([]);
+    if (activeGroupId) {
+      const next = [...equipmentGroup, ...names];
+      setEquipmentGroup(next);
+      await persistGroupChange(activeGroupId, next);
+    } else {
+      setEquipmentGroup(prev => [...new Set([...prev, ...names])]);
+    }
+  };
+
+  const clearSelection = async () => {
+    setGroupSelectedIds([]);
+    if (activeGroupId) {
+      setEquipmentGroup([]);
+      await persistGroupChange(activeGroupId, []);
+    } else {
+      setEquipmentGroup([]);
+    }
+  };
+
+  // Add a category by typing it in when it is missing from the dropdown list
+  // (for example a new equipment type with no queued applications yet).
+  const addNewCategory = async () => {
+    const raw = newCategoryName.trim().replace(/\s+/g, ' ');
+    if (!raw) return;
+    const existing = [...availableGroupOptions, ...equipmentGroupOptions]
+      .find(o => o.name.toLowerCase() === raw.toLowerCase());
+    const final = existing ? existing.name : raw;
+
+    if (equipmentGroup.some(n => n.toLowerCase() === final.toLowerCase())) {
+      alert(`"${final}" is already in this group.`);
+    } else if (assignedCategories.has(final)) {
+      alert(`"${final}" is already assigned to another saved group.`);
+    } else {
+      await addToGroup(final);
+    }
+    setNewCategoryName('');
+  };
+
+  // Options actually shown in the dropdown: not assigned to a saved group AND not
+  // already picked into the current group (picked ones move to the chips below).
+  const availableGroupOptions = useMemo(
+    () => equipmentGroupOptions.filter(o => !equipmentGroup.includes(o.name)),
+    [equipmentGroupOptions, equipmentGroup]
+  );
+
   // Equipment options narrowed by the dropdown's own search box
   const equipPickerOptions = useMemo(() => {
     const q = equipPickerSearch.trim().toLowerCase();
-    if (!q) return equipmentGroupOptions;
-    return equipmentGroupOptions.filter(o => o.name.toLowerCase().includes(q));
-  }, [equipmentGroupOptions, equipPickerSearch]);
+    if (!q) return availableGroupOptions;
+    return availableGroupOptions.filter(o => o.name.toLowerCase().includes(q));
+  }, [availableGroupOptions, equipPickerSearch]);
 
   // Close the dropdown on outside click or Escape
   useEffect(() => {
@@ -475,6 +581,11 @@ function AdminModule({ activeTab: externalTab }) {
     const duplicate = equipmentGroups.find(g => (g.name || '').toLowerCase() === name.toLowerCase());
     if (duplicate) return alert(`A group named "${name}" already exists.`);
 
+    const alreadyAssigned = equipmentGroup.filter(cat => assignedCategories.has(cat));
+    if (alreadyAssigned.length > 0) {
+      return alert(`"${alreadyAssigned.join('", "')}" is already assigned to another saved group. Remove it from the selection first.`);
+    }
+
     setIsSubmitting(true);
     try {
       const created = await addDoc(collection(db, EQUIPMENT_GROUPS_COLLECTION), {
@@ -484,8 +595,8 @@ function AdminModule({ activeTab: externalTab }) {
         createdAt: serverTimestamp()
       });
       setGroupName('');
-      await fetchEquipmentGroups();
       setActiveGroupId(created.id);
+      await fetchEquipmentGroups();
       alert(`Equipment group "${name}" saved. It is now available to the Accounts department.`);
     } catch (err) {
       if (err?.code === 'permission-denied') {
@@ -497,19 +608,40 @@ function AdminModule({ activeTab: externalTab }) {
     }
   };
 
-  const applyEquipmentGroup = (group) => {
+  // Select a saved group: its categories load into the box below. From there the
+  // admin removes items from the box or adds new ones via the dropdown — both are
+  // saved to the group automatically.
+  const selectSavedGroup = (group) => {
     setEquipmentGroup([...(group.items || [])]);
     setGroupSelectedIds([]);
     setGroupSearch('');
     setEquipPickerOpen(false);
     setEquipPickerSearch('');
+    setNewCategoryName('');
+    setGroupName('');
     setActiveGroupId(group.id);
+  };
+
+  // Leave the selected group and start building a brand-new group instead.
+  const startNewGroup = () => {
+    setEquipmentGroup([]);
+    setGroupName('');
+    setNewCategoryName('');
+    setGroupSelectedIds([]);
+    setEquipPickerOpen(false);
+    setEquipPickerSearch('');
+    setActiveGroupId('');
   };
 
   const deleteEquipmentGroup = async (group) => {
     if (!window.confirm(`Delete the equipment group "${group.name}"? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(db, EQUIPMENT_GROUPS_COLLECTION, group.id));
+      if (activeGroupId === group.id) {
+        setActiveGroupId('');
+        setEquipmentGroup([]);
+        setGroupName('');
+      }
       await fetchEquipmentGroups();
     } catch (err) {
       if (err?.code === 'permission-denied') {
@@ -1109,7 +1241,7 @@ function AdminModule({ activeTab: externalTab }) {
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {equipmentGroup.length === 0
-                          ? `Select equipment... (${equipmentGroupOptions.length} available)`
+                          ? `Select equipment... (${availableGroupOptions.length} available to assign)`
                           : equipmentGroup.length === 1
                             ? equipmentGroup[0]
                             : `${equipmentGroup.length} equipment types selected`}
@@ -1139,25 +1271,29 @@ function AdminModule({ activeTab: externalTab }) {
 
                         <div style={{ display: 'flex', gap: '0.5rem', padding: '0.6rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
                           <button
-                            onClick={() => { setEquipmentGroup([...new Set([...equipPickerOptions.map(o => o.name), ...equipmentGroup])]); setGroupSelectedIds([]); }}
+                            onClick={addAllAvailable}
                             disabled={equipPickerOptions.length === 0}
                             style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', cursor: equipPickerOptions.length === 0 ? 'not-allowed' : 'pointer', opacity: equipPickerOptions.length === 0 ? 0.5 : 1 }}
                           >
                             Select {equipPickerSearch ? 'these' : 'all'}
                           </button>
                           <button
-                            onClick={() => setEquipmentGroup(equipPickerOptions.filter(o => !equipmentGroup.includes(o.name)).map(o => o.name))}
-                            disabled={equipPickerOptions.every(o => equipmentGroup.includes(o.name))}
-                            style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', cursor: equipPickerOptions.every(o => equipmentGroup.includes(o.name)) ? 'not-allowed' : 'pointer', opacity: equipPickerOptions.every(o => equipmentGroup.includes(o.name)) ? 0.5 : 1 }}
+                            onClick={clearSelection}
+                            disabled={equipmentGroup.length === 0}
+                            style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', cursor: equipmentGroup.length === 0 ? 'not-allowed' : 'pointer', opacity: equipmentGroup.length === 0 ? 0.5 : 1 }}
                           >
-                            Deselect {equipPickerSearch ? 'these' : 'all'}
+                            Clear box
                           </button>
                         </div>
 
                         <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
                           {equipPickerOptions.length === 0 ? (
                             <p style={{ padding: '1.5rem', margin: 0, textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
-                              No equipment matches "{equipPickerSearch}"
+                              {equipPickerSearch
+                                ? `No equipment matches "${equipPickerSearch}"`
+                                : equipmentGroupOptions.length === 0
+                                  ? 'All equipment categories are already assigned to saved groups.'
+                                  : 'All remaining categories are added, or choose a name and create the group first.'}
                             </p>
                           ) : (
                             equipPickerOptions.map(opt => {
@@ -1166,7 +1302,7 @@ function AdminModule({ activeTab: externalTab }) {
                                 <button
                                   key={opt.name}
                                   type="button"
-                                  onClick={() => toggleEquipmentGroup(opt.name)}
+                                  onClick={() => addToGroup(opt.name)}
                                   style={{
                                     width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
                                     padding: '0.55rem 0.9rem', cursor: 'pointer', textAlign: 'left',
@@ -1204,7 +1340,7 @@ function AdminModule({ activeTab: externalTab }) {
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                           <button
                             type="button"
-                            onClick={() => toggleEquipmentGroup(name)}
+                            onClick={() => removeFromGroup(name)}
                             title={`Remove ${name}`}
                             style={{ display: 'flex', background: 'rgba(255,255,255,0.08)', border: 'none', color: 'inherit', cursor: 'pointer', borderRadius: '50%', padding: '0.15rem' }}
                           >
@@ -1214,15 +1350,61 @@ function AdminModule({ activeTab: externalTab }) {
                       ))}
                     </div>
                   )}
+
+                  {assignedCategories.size > 0 && (
+                    <p style={{ margin: '0.6rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+                      {assignedCategories.size} categor{assignedCategories.size === 1 ? 'y' : 'ies'} already grouped and hidden from the dropdown.
+                    </p>
+                  )}
+
+                  {/* Add a category by typing when it is missing from the dropdown */}
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flexGrow: 1, minWidth: '180px' }}>
+                      <Plus size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#a855f7' }} />
+                      <input
+                        type="text"
+                        placeholder="Add a category not in the list..."
+                        value={newCategoryName}
+                        onChange={e => setNewCategoryName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addNewCategory(); } }}
+                        style={{ width: '100%', padding: '0.5rem 1rem 0.5rem 2.1rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addNewCategory}
+                      disabled={!newCategoryName.trim()}
+                      style={{ ...pageNavBtnStyle, color: '#c084fc', cursor: newCategoryName.trim() ? 'pointer' : 'not-allowed', opacity: newCategoryName.trim() ? 1 : 0.5, padding: '0.5rem 1rem', whiteSpace: 'nowrap' }}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                      Add
+                    </button>
+                  </div>
                 </>
               )}
             </div>
 
             {/* Custom equipment group builder */}
             <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <FolderPlus size={18} style={{ color: '#a855f7' }} />
-                <strong style={{ fontSize: '0.9rem' }}>Create a custom equipment group</strong>
+                <strong style={{ fontSize: '0.9rem' }}>{activeGroupId ? 'Selected group' : 'Create a custom equipment group'}</strong>
+
+                {activeGroupId && (
+                  <>
+                    <span style={{ fontSize: '0.75rem', color: '#e9d5ff', background: 'rgba(168,85,247,0.15)', padding: '0.25rem 0.7rem', borderRadius: '20px' }}>
+                      {activeGroupName} — changes save automatically
+                    </span>
+                    <button
+                      type="button"
+                      onClick={startNewGroup}
+                      style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.3rem 0.7rem', color: '#94a3b8', cursor: 'pointer' }}
+                    >
+                      <Plus size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                      New Group
+                    </button>
+                  </>
+                )}
               </div>
 
               {groupLoadError && (
@@ -1250,31 +1432,37 @@ function AdminModule({ activeTab: externalTab }) {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flexGrow: 1, minWidth: '250px' }}>
-                  <label style={labelStyle}>Group name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Water Pump Procurement"
-                    value={groupName}
-                    onChange={e => setGroupName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEquipmentGroup(); }}
-                    style={inputStyle}
-                  />
+              {!activeGroupId && (
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flexGrow: 1, minWidth: '250px' }}>
+                    <label style={labelStyle}>Group name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Water Pump Procurement"
+                      value={groupName}
+                      onChange={e => setGroupName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveEquipmentGroup(); }}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <button
+                    onClick={saveEquipmentGroup}
+                    disabled={isSubmitting}
+                    style={{ ...addBtnStyle, background: 'linear-gradient(135deg, #7e22ce 0%, #a855f7 100%)', opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+                  >
+                    <Save size={16} /> {isSubmitting ? 'Saving...' : 'Create Group'}
+                  </button>
                 </div>
-                <button
-                  onClick={saveEquipmentGroup}
-                  disabled={isSubmitting}
-                  style={{ ...addBtnStyle, background: 'linear-gradient(135deg, #7e22ce 0%, #a855f7 100%)', opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
-                >
-                  <Save size={16} /> {isSubmitting ? 'Saving...' : 'Create Group'}
-                </button>
-              </div>
+              )}
 
               <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: '#64748b' }}>
-                {equipmentGroup.length === 0
-                  ? 'Pick the relevant equipment categories from the dropdown above, then give the group a name.'
-                  : `Saves the ${equipmentGroup.length} equipment categor${equipmentGroup.length === 1 ? 'y' : 'ies'} selected above: ${equipmentGroup.join(', ')}`}
+                {activeGroupId
+                  ? equipmentGroup.length === 0
+                    ? 'The box is empty. Pick categories from the dropdown or type a new one below — they are added to this group automatically.'
+                    : `This group holds ${equipmentGroup.join(', ')}. Remove an item from the box to take it out (it returns to the dropdown), or pick more from the dropdown to add.`
+                  : equipmentGroup.length === 0
+                    ? 'Pick the relevant equipment categories from the dropdown (or type one that is missing), then give the group a name.'
+                    : `Saves the ${equipmentGroup.length} equipment categor${equipmentGroup.length === 1 ? 'y' : 'ies'} selected above: ${equipmentGroup.join(', ')}`}
               </p>
 
               {/* Saved groups */}
@@ -1320,11 +1508,11 @@ function AdminModule({ activeTab: externalTab }) {
 
                           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <button
-                              onClick={() => applyEquipmentGroup(group)}
+                              onClick={() => selectSavedGroup(group)}
                               style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.35rem 0.7rem', color: isActive ? '#c084fc' : '#94a3b8', cursor: 'pointer' }}
                             >
                               <CheckCircle size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
-                              {isActive ? 'Active' : 'Apply'}
+                              {isActive ? 'Selected' : 'Select'}
                             </button>
                             <button
                               onClick={() => exportSavedGroupPDF(group)}
