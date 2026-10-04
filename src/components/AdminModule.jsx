@@ -4,7 +4,7 @@ import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc,
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save, Plus } from 'lucide-react';
+import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save, Plus, FileSpreadsheet } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
@@ -16,7 +16,8 @@ import {
   matchGroupItems,
   filterAppsByEquipmentGroup,
   computeGroupTotals,
-  exportEquipmentGroupPDF
+  exportEquipmentGroupPDF,
+  exportEquipmentGroupCSV
 } from '../utils/equipmentGroups';
 import { filterAssignedDivision } from '../utils/divisions';
 
@@ -664,6 +665,19 @@ function AdminModule({ activeTab: externalTab }) {
     });
   };
 
+  // Spreadsheet twin of the PDF button above: honours ticked rows the same way
+  const exportGroupCSV = () => {
+    const exportSet = groupSelectedApps.length > 0 ? groupSelectedApps : groupApplications;
+    const onlySelected = groupSelectedApps.length > 0;
+    exportEquipmentGroupCSV({
+      apps: exportSet,
+      items: equipmentGroup,
+      groupName: activeGroupName || 'Ad-hoc selection',
+      onlySelected,
+      totalAvailable: groupApplications.length
+    });
+  };
+
   // Export a saved group directly, without disturbing the current on-screen selection
   const exportSavedGroupPDF = async (group) => {
     const items = group.items || [];
@@ -675,6 +689,25 @@ function AdminModule({ activeTab: externalTab }) {
       return alert(`No applications in the dispatch queue match the group "${group.name}".`);
     }
     await exportEquipmentGroupPDF({
+      apps,
+      items,
+      groupName: group.name,
+      onlySelected: false,
+      totalAvailable: apps.length
+    });
+  };
+
+  // Export a saved group as CSV, without disturbing the current on-screen selection
+  const exportSavedGroupCSV = (group) => {
+    const items = group.items || [];
+    if (items.length === 0) {
+      return alert(`The group "${group.name}" has no equipment categories saved.`);
+    }
+    const apps = filterAppsByEquipmentGroup(dispatchQueue, items, '');
+    if (apps.length === 0) {
+      return alert(`No applications in the dispatch queue match the group "${group.name}".`);
+    }
+    exportEquipmentGroupCSV({
       apps,
       items,
       groupName: group.name,
@@ -1202,6 +1235,14 @@ function AdminModule({ activeTab: externalTab }) {
                 >
                   <FileText size={18} /> {groupSelectedIds.length > 0 ? `Export Selected (${groupSelectedIds.length}) PDF` : 'Export Group PDF'}
                 </button>
+                <button
+                  onClick={exportGroupCSV}
+                  disabled={groupApplications.length === 0}
+                  title="Download the same report as a spreadsheet"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '0.6rem 1rem', borderRadius: '10px', cursor: groupApplications.length === 0 ? 'not-allowed' : 'pointer', opacity: groupApplications.length === 0 ? 0.5 : 1, fontWeight: 600 }}
+                >
+                  <FileSpreadsheet size={18} /> {groupSelectedIds.length > 0 ? `Export Selected (${groupSelectedIds.length}) CSV` : 'Export Group CSV'}
+                </button>
               </div>
             </div>
 
@@ -1528,6 +1569,14 @@ function AdminModule({ activeTab: externalTab }) {
                             >
                               <FileText size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
                               Export PDF
+                            </button>
+                            <button
+                              onClick={() => exportSavedGroupCSV(group)}
+                              title={`Download ${group.name} as CSV`}
+                              style={{ ...pageNavBtnStyle, fontSize: '0.75rem', padding: '0.35rem 0.7rem', color: '#22c55e', cursor: 'pointer' }}
+                            >
+                              <FileSpreadsheet size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                              Export CSV
                             </button>
                           </div>
                         </div>
