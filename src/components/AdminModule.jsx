@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -18,6 +18,7 @@ import {
   computeGroupTotals,
   exportEquipmentGroupPDF
 } from '../utils/equipmentGroups';
+import { filterAssignedDivision } from '../utils/divisions';
 
 const thStyle = { padding: '1.2rem 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' };
 const tdStyle = { padding: '1.2rem 1.5rem' };
@@ -799,7 +800,11 @@ function AdminModule({ activeTab: externalTab }) {
       
       // We show both pending and already dispatched items in this view
       // But we filter out items that have moved further (ordered/completed)
-      setDispatchQueue(apps.filter(app => app.status !== 'ordered' && app.status !== 'completed'));
+      const queued = apps.filter(app => app.status !== 'ordered' && app.status !== 'completed');
+
+      // Records with no sector attached would otherwise be listed under a "General"
+      // Division, which reads like a real division and misleads the reviewer.
+      setDispatchQueue(filterAssignedDivision(queued));
     } catch (err) { console.error(err); }
     finally { setAppsLoading(false); }
   };
@@ -1172,15 +1177,15 @@ function AdminModule({ activeTab: externalTab }) {
         </div>
       {activeSubTab === 'equipment-group' && (
         <div className="animate-fade-in">
-          <div className="glass" style={{ padding: '2rem', borderRadius: '20px', overflowX: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '2rem', flexWrap: 'wrap' }}>
-              <div>
+          <div className="glass egp-card" style={{ padding: 'clamp(1rem, 3vw, 2rem)', borderRadius: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0, flex: '1 1 300px' }}>
                 <h3 style={{ margin: 0 }}>Equipment Group Procurement</h3>
                 <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: '#64748b' }}>
                   Group similar equipment to review matching applications together, export the group as a PDF, and forward selected rows to Accounts / Procurement.
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <div className="egp-actions" style={{ flex: '0 1 auto' }}>
                 {groupSelectedIds.length > 0 && (
                   <button
                     onClick={forwardGroupToAccount}
@@ -1200,11 +1205,13 @@ function AdminModule({ activeTab: externalTab }) {
               </div>
             </div>
 
+            {/* Equipment picker + group builder sit side by side on wide screens */}
+            <div className="egp-top">
             {/* Equipment group picker */}
-            <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="egp-panel">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Package size={18} style={{ color: '#3b82f6' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flexWrap: 'wrap' }}>
+                  <Package size={18} style={{ color: '#3b82f6', flexShrink: 0 }} />
                   <strong style={{ fontSize: '0.9rem' }}>Select similar equipment to group</strong>
                   {equipmentGroup.length > 0 && (
                     <span style={{ fontSize: '0.75rem', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
@@ -1334,7 +1341,7 @@ function AdminModule({ activeTab: externalTab }) {
                             padding: '0.3rem 0.4rem 0.3rem 0.7rem', borderRadius: '20px',
                             background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.35)',
                             color: '#93c5fd', fontSize: '0.78rem', fontWeight: 600,
-                            maxWidth: '280px'
+                            maxWidth: '100%', minWidth: 0
                           }}
                         >
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
@@ -1358,8 +1365,8 @@ function AdminModule({ activeTab: externalTab }) {
                   )}
 
                   {/* Add a category by typing when it is missing from the dropdown */}
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ position: 'relative', flexGrow: 1, minWidth: '180px' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: '1 1 180px', minWidth: 0 }}>
                       <Plus size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#a855f7' }} />
                       <input
                         type="text"
@@ -1385,7 +1392,7 @@ function AdminModule({ activeTab: externalTab }) {
             </div>
 
             {/* Custom equipment group builder */}
-            <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="egp-panel">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <FolderPlus size={18} style={{ color: '#a855f7' }} />
                 <strong style={{ fontSize: '0.9rem' }}>{activeGroupId ? 'Selected group' : 'Create a custom equipment group'}</strong>
@@ -1434,7 +1441,7 @@ function AdminModule({ activeTab: externalTab }) {
 
               {!activeGroupId && (
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                  <div style={{ flexGrow: 1, minWidth: '250px' }}>
+                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                     <label style={labelStyle}>Group name</label>
                     <input
                       type="text"
@@ -1478,7 +1485,7 @@ function AdminModule({ activeTab: externalTab }) {
                 {equipmentGroups.length === 0 ? (
                   <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>No custom groups saved yet.</p>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.9rem' }}>
+                  <div className="egp-groups">
                     {equipmentGroups.map(group => {
                       const isActive = group.id === activeGroupId;
                       const groupItems = group.items || [];
@@ -1486,13 +1493,14 @@ function AdminModule({ activeTab: externalTab }) {
                         <div
                           key={group.id}
                           style={{
+                            minWidth: 0,
                             padding: '1rem', borderRadius: '12px',
                             background: isActive ? 'rgba(168,85,247,0.08)' : 'rgba(0,0,0,0.2)',
                             border: `1px solid ${isActive ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.06)'}`
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                            <strong style={{ fontSize: '0.9rem', color: isActive ? '#e9d5ff' : '#e2e8f0' }}>{group.name}</strong>
+                            <strong style={{ fontSize: '0.9rem', color: isActive ? '#e9d5ff' : '#e2e8f0', minWidth: 0, overflowWrap: 'anywhere' }}>{group.name}</strong>
                             <button
                               onClick={() => deleteEquipmentGroup(group)}
                               title={`Delete ${group.name}`}
@@ -1502,7 +1510,7 @@ function AdminModule({ activeTab: externalTab }) {
                             </button>
                           </div>
 
-                          <p style={{ margin: '0.5rem 0 0.8rem', fontSize: '0.75rem', color: '#64748b', lineHeight: 1.5 }}>
+                          <p style={{ margin: '0.5rem 0 0.8rem', fontSize: '0.75rem', color: '#64748b', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
                             {groupItems.length} categor{groupItems.length === 1 ? 'y' : 'ies'}: {groupItems.join(', ') || 'None'}
                           </p>
 
@@ -1529,10 +1537,12 @@ function AdminModule({ activeTab: externalTab }) {
                 )}
               </div>
             </div>
+            {/* End of the two-column top area (picker | group builder) */}
+            </div>
 
             {/* Search + summary */}
-            <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ position: 'relative', flexGrow: 1, minWidth: '250px' }}>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 0 }}>
                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#475569' }} />
                 <input
                   type="text"
@@ -1543,12 +1553,12 @@ function AdminModule({ activeTab: externalTab }) {
                 />
               </div>
               {equipmentGroup.length > 0 && (
-                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Applications: <strong style={{ color: '#e2e8f0' }}>{groupApplications.length}</strong></span>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Line items: <strong style={{ color: '#e2e8f0' }}>{groupTotals.itemCount}</strong></span>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Units: <strong style={{ color: '#e2e8f0' }}>{groupTotals.units}</strong></span>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Project cost: <strong style={{ color: '#e2e8f0' }}>LKR {groupTotals.totalCost.toLocaleString()}</strong></span>
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Grant: <strong style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</strong></span>
+                <div className="egp-stats">
+                  <span className="egp-stat">Applications: <strong style={{ color: '#e2e8f0' }}>{groupApplications.length}</strong></span>
+                  <span className="egp-stat">Line items: <strong style={{ color: '#e2e8f0' }}>{groupTotals.itemCount}</strong></span>
+                  <span className="egp-stat">Units: <strong style={{ color: '#e2e8f0' }}>{groupTotals.units}</strong></span>
+                  <span className="egp-stat">Project cost: <strong style={{ color: '#e2e8f0' }}>LKR {groupTotals.totalCost.toLocaleString()}</strong></span>
+                  <span className="egp-stat">Grant: <strong style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</strong></span>
                 </div>
               )}
             </div>
@@ -1579,25 +1589,25 @@ function AdminModule({ activeTab: externalTab }) {
                   )}
                 </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1900px' }}>
+                <div className="egp-table-wrap">
+                  <table className="egp-table">
                     <thead>
-                      <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
-                        <th style={thStyle}>Select</th>
-                        <th style={thStyle}>#</th>
-                        <th style={thStyle}>Name</th>
-                        <th style={thStyle}>Business</th>
-                        <th style={thStyle}>Division</th>
-                        <th style={thStyle}>GS Division</th>
-                        <th style={thStyle}>Equipment</th>
-                        <th style={thStyle}>Brand</th>
-                        <th style={thStyle}>Model</th>
-                        <th style={thStyle}>Qty</th>
-                        <th style={thStyle}>Score</th>
-                        <th style={thStyle}>Total Cost</th>
-                        <th style={thStyle}>Grant</th>
-                        <th style={thStyle}>Dispatch</th>
-                        <th style={thStyle}>Actions</th>
+                      <tr>
+                        <th>Select</th>
+                        <th>#</th>
+                        <th className="egp-wrap">Name</th>
+                        <th className="egp-wrap">Business</th>
+                        <th>Division</th>
+                        <th>GS Division</th>
+                        <th className="egp-wrap">Equipment</th>
+                        <th className="egp-wrap">Brand</th>
+                        <th className="egp-wrap">Model</th>
+                        <th>Qty</th>
+                        <th>Score</th>
+                        <th>Total Cost</th>
+                        <th>Grant</th>
+                        <th>Dispatch</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1609,23 +1619,23 @@ function AdminModule({ activeTab: externalTab }) {
                         const dispatched = !!app.adminDispatch;
                         const checked = groupSelectedIds.includes(app.id);
                         return (
-                          <tr key={app.id} className="row-hover" style={{ background: checked ? 'rgba(59,130,246,0.07)' : 'transparent' }}>
-                            <td style={tdStyle}>
-                              <input type="checkbox" checked={checked} onChange={() => toggleGroupSelect(app.id)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                          <tr key={app.id} style={{ background: checked ? 'rgba(59,130,246,0.07)' : 'transparent' }}>
+                            <td>
+                              <input type="checkbox" checked={checked} onChange={() => toggleGroupSelect(app.id)} style={{ width: '16px', height: '16px', minHeight: 0, cursor: 'pointer' }} />
                             </td>
-                            <td style={tdStyle}>{idx + 1}</td>
-                            <td style={tdStyle}><strong>{app.personal?.fullName || 'N/A'}</strong></td>
-                            <td style={tdStyle}>{app.business?.businessName || 'N/A'}</td>
-                            <td style={tdStyle}>{app.division || '-'}</td>
-                            <td style={tdStyle}>{app.personal?.gsDivision || '-'}</td>
-                            <td style={tdStyle}>{items.map(it => it.name).join(', ')}</td>
-                            <td style={tdStyle}>{items.map(it => it.brand).filter(Boolean).join(', ') || '-'}</td>
-                            <td style={tdStyle}>{items.map(it => it.model).filter(Boolean).join(', ') || '-'}</td>
-                            <td style={tdStyle}>{items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}</td>
-                            <td style={tdStyle}><span style={{ color: granted >= 50 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>{granted}</span></td>
-                            <td style={tdStyle}>LKR {cost.toLocaleString()}</td>
-                            <td style={tdStyle}><span style={{ color: '#10b981', fontWeight: 700 }}>LKR {grant.toLocaleString()}</span></td>
-                            <td style={tdStyle}>
+                            <td>{idx + 1}</td>
+                            <td className="egp-wrap"><strong>{app.personal?.fullName || 'N/A'}</strong></td>
+                            <td className="egp-wrap">{app.business?.businessName || 'N/A'}</td>
+                            <td>{app.division || 'General'}</td>
+                            <td>{app.personal?.gsDivision || '-'}</td>
+                            <td className="egp-wrap">{items.map(it => it.name).join(', ')}</td>
+                            <td className="egp-wrap">{items.map(it => it.brand).filter(Boolean).join(', ') || '-'}</td>
+                            <td className="egp-wrap">{items.map(it => it.model).filter(Boolean).join(', ') || '-'}</td>
+                            <td>{items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}</td>
+                            <td><span style={{ color: granted >= 50 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>{granted}</span></td>
+                            <td>LKR {cost.toLocaleString()}</td>
+                            <td><span style={{ color: '#10b981', fontWeight: 700 }}>LKR {grant.toLocaleString()}</span></td>
+                            <td>
                               <span style={{
                                 fontSize: '0.7rem', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '20px',
                                 background: dispatched ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
@@ -1634,10 +1644,10 @@ function AdminModule({ activeTab: externalTab }) {
                                 {dispatched ? 'Sent to Accounts' : 'Awaiting Dispatch'}
                               </span>
                             </td>
-                            <td style={tdStyle}>
+                            <td>
                               <button
                                 onClick={() => setSelectedApp(app)}
-                                style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600 }}
+                                style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '0.45rem 0.8rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 600 }}
                               >
                                 <Eye size={16} /> View
                               </button>
@@ -1647,16 +1657,83 @@ function AdminModule({ activeTab: externalTab }) {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr style={{ background: 'rgba(255,255,255,0.04)', fontWeight: 700 }}>
-                        <td style={tdStyle} colSpan={9}>TOTAL</td>
-                        <td style={tdStyle}>{groupTotals.units}</td>
-                        <td style={tdStyle}>-</td>
-                        <td style={tdStyle}>LKR {groupTotals.totalCost.toLocaleString()}</td>
-                        <td style={tdStyle}><span style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</span></td>
-                        <td style={tdStyle} colSpan={2}></td>
+                      <tr>
+                        <td colSpan={9}>TOTAL</td>
+                        <td>{groupTotals.units}</td>
+                        <td>-</td>
+                        <td>LKR {groupTotals.totalCost.toLocaleString()}</td>
+                        <td><span style={{ color: '#10b981' }}>LKR {groupTotals.totalGrant.toLocaleString()}</span></td>
+                        <td colSpan={2}></td>
                       </tr>
                     </tfoot>
                   </table>
+                </div>
+
+                <div className="egp-cardlist">
+                  {groupApplications.map((app, idx) => {
+                    const items = groupItemsOf(app);
+                    const granted = app.score || 0;
+                    const cost = (app.equipment?.totalGrant || 0) * 2;
+                    const grant = app.equipment?.totalGrant || 0;
+                    const dispatched = !!app.adminDispatch;
+                    const checked = groupSelectedIds.includes(app.id);
+                    return (
+                      <div
+                        key={app.id}
+                        className="egp-row"
+                        style={{ background: checked ? 'rgba(59,130,246,0.08)' : undefined }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleGroupSelect(app.id)} style={{ width: '18px', height: '18px', minHeight: 0, flexShrink: 0, cursor: 'pointer' }} />
+                          <strong style={{ fontSize: '0.9rem', minWidth: 0, overflowWrap: 'anywhere' }}>{app.personal?.fullName || 'N/A'}</strong>
+                          <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#475569', flexShrink: 0 }}>#{idx + 1}</span>
+                        </div>
+
+                        <dl>
+                          <dt>Business</dt>
+                          <dd>{app.business?.businessName || 'N/A'}</dd>
+                          <dt>Division</dt>
+                          <dd>{app.division || 'General'} / {app.personal?.gsDivision || '-'}</dd>
+                          <dt>Equipment</dt>
+                          <dd>{items.map(it => it.name).join(', ') || '-'}</dd>
+                          <dt>Brand / Model</dt>
+                          <dd>{[items.map(it => it.brand).filter(Boolean).join(', '), items.map(it => it.model).filter(Boolean).join(', ')].filter(Boolean).join(' · ') || '-'}</dd>
+                          <dt>Qty</dt>
+                          <dd>{items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}</dd>
+                          <dt>Score</dt>
+                          <dd><span style={{ color: granted >= 50 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>{granted}</span></dd>
+                          <dt>Project cost</dt>
+                          <dd>LKR {cost.toLocaleString()}</dd>
+                          <dt>Grant</dt>
+                          <dd><span style={{ color: '#10b981', fontWeight: 700 }}>LKR {grant.toLocaleString()}</span></dd>
+                          <dt>Dispatch</dt>
+                          <dd>
+                            <span style={{
+                              fontSize: '0.7rem', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '20px',
+                              background: dispatched ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                              color: dispatched ? '#10b981' : '#f59e0b'
+                            }}>
+                              {dispatched ? 'Sent to Accounts' : 'Awaiting Dispatch'}
+                            </span>
+                          </dd>
+                        </dl>
+
+                        <button
+                          onClick={() => setSelectedApp(app)}
+                          style={{ marginTop: '0.7rem', width: '100%', justifyContent: 'center', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', color: '#3b82f6', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600 }}
+                        >
+                          <Eye size={16} /> View Application
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <div className="egp-row" style={{ background: 'rgba(255,255,255,0.04)', display: 'flex', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap', fontWeight: 700, fontSize: '0.8rem' }}>
+                    <span style={{ color: '#94a3b8' }}>TOTAL — {groupApplications.length} application(s)</span>
+                    <span style={{ color: '#e2e8f0' }}>Units: {groupTotals.units}</span>
+                    <span style={{ color: '#e2e8f0' }}>Cost: LKR {groupTotals.totalCost.toLocaleString()}</span>
+                    <span style={{ color: '#10b981' }}>Grant: LKR {groupTotals.totalGrant.toLocaleString()}</span>
+                  </div>
                 </div>
               </>
             )}
@@ -1759,24 +1836,46 @@ function AdminModule({ activeTab: externalTab }) {
                    style={{ ...selectStyle, width: '100%', height: '45px' }}
                  >
                    <option value="all">All Scores</option>
+                   <option value="ge100">100 & Above</option>
+                   <option value="ge95">95 & Above</option>
                    <option value="ge90">90 & Above</option>
+                   <option value="ge85">85 & Above</option>
                    <option value="ge80">80 & Above</option>
+                   <option value="ge75">75 & Above</option>
                    <option value="ge70">70 & Above</option>
+                   <option value="ge65">65 & Above</option>
                    <option value="ge60">60 & Above</option>
+                   <option value="ge55">55 & Above</option>
                    <option value="ge50">50 & Above</option>
+                   <option value="ge45">45 & Above</option>
                    <option value="ge40">40 & Above</option>
+                   <option value="ge35">35 & Above</option>
                    <option value="ge30">30 & Above</option>
+                   <option value="ge25">25 & Above</option>
                    <option value="ge20">20 & Above</option>
+                   <option value="ge15">15 & Above</option>
                    <option value="ge10">10 & Above</option>
+                   <option value="ge5">5 & Above</option>
+                   <option value="le5">5 & Below</option>
                    <option value="le10">10 & Below</option>
+                   <option value="le15">15 & Below</option>
                    <option value="le20">20 & Below</option>
+                   <option value="le25">25 & Below</option>
                    <option value="le30">30 & Below</option>
+                   <option value="le35">35 & Below</option>
                    <option value="le40">40 & Below</option>
+                   <option value="le45">45 & Below</option>
                    <option value="le50">50 & Below</option>
+                   <option value="le55">55 & Below</option>
                    <option value="le60">60 & Below</option>
+                   <option value="le65">65 & Below</option>
                    <option value="le70">70 & Below</option>
+                   <option value="le75">75 & Below</option>
                    <option value="le80">80 & Below</option>
+                   <option value="le85">85 & Below</option>
                    <option value="le90">90 & Below</option>
+                   <option value="le95">95 & Below</option>
+                   <option value="le100">100 & Below</option>
                  </select>
                </div>
 
@@ -1833,7 +1932,7 @@ function AdminModule({ activeTab: externalTab }) {
                       <td style={tdStyle}>{app.business?.regNo || '-'}</td>
                       <td style={tdStyle}>{app.business?.licenseNo || '-'}</td>
                       <td style={tdStyle}>{app.personal?.nic || '-'}</td>
-                      <td style={tdStyle}>{app.division}</td>
+                      <td style={tdStyle}>{app.division || 'General'}</td>
                       <td style={tdStyle}>{firstItem.name || 'N/A'}</td>
                       <td style={tdStyle}>{firstItem.model || '-'}</td>
                       <td style={tdStyle}>{firstItem.brand || '-'}</td>

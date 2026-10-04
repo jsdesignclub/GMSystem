@@ -190,6 +190,182 @@ h1 {
   }
 }
 
+/* ---------- Equipment Group Procurement (admin) ---------- */
+.egp-card {
+  min-width: 0;
+  overflow: visible;
+}
+
+.egp-top {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: 1.25rem;
+  align-items: start;
+}
+
+.egp-panel {
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  padding: clamp(0.85rem, 2.2vw, 1.5rem);
+}
+
+.egp-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.egp-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 0.9rem;
+}
+
+.egp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 0.6rem;
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.egp-stat {
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+}
+
+.egp-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  max-height: clamp(320px, 65vh, 760px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.egp-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+}
+
+.egp-table th,
+.egp-table td {
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.egp-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #121a2b;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.egp-table tbody tr:hover td {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.egp-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: #121a2b;
+  font-weight: 700;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+}
+
+.egp-table .egp-wrap {
+  white-space: normal;
+  min-width: 150px;
+  max-width: 230px;
+  overflow-wrap: anywhere;
+}
+
+.egp-cardlist {
+  display: none;
+  gap: 0.7rem;
+  max-height: none;
+  overflow: visible;
+}
+
+.egp-row {
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.85rem;
+}
+
+.egp-row dl {
+  display: grid;
+  grid-template-columns: minmax(84px, 32%) minmax(0, 1fr);
+  gap: 0.3rem 0.7rem;
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+}
+
+.egp-row dt {
+  color: #64748b;
+}
+
+.egp-row dd {
+  margin: 0;
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1200px) {
+  .egp-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .egp-table-wrap {
+    display: none;
+  }
+
+  .egp-cardlist {
+    display: grid;
+  }
+}
+
+@media (max-width: 640px) {
+  .egp-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .egp-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Fix for invisible select options in some browsers */
 select option {
   background-color: #1e293b;

@@ -10,6 +10,7 @@ import {
   LabelList, PieChart, Pie, Cell
 } from 'recharts';
 import { getTranslation } from '../i18n';
+import { filterAssignedDivision } from '../utils/divisions';
 
 const APPROVED_STATUSES = ['approved', 'ordered', 'completed'];
 const PENDING_STATUSES = ['pending_ds', 'pending_director', 'approved_by_director'];
@@ -80,24 +81,32 @@ function AdminDashboard({ language = 'en' }) {
     const pendingApps = apps.filter(a => PENDING_STATUSES.includes(a.status));
     const rejectedApps = apps.filter(a => a.status === 'rejected');
 
+    // Records with no sector attached are not real submissions and are excluded
+    // everywhere, so the reported total matches what staff can actually act on.
+    const scopedApps = filterAssignedDivision(apps);
+    const scopedApproved = filterAssignedDivision(approvedApps);
+    const scopedPending = filterAssignedDivision(pendingApps);
+    const scopedRejected = filterAssignedDivision(rejectedApps);
+
     return {
-      totalReceived: apps.length,
-      grantTotal: approvedApps.reduce((sum, a) => sum + grantOf(a), 0),
-      equipmentAmount: apps.reduce((sum, a) => sum + costOf(a), 0),
-      approved: approvedApps.length,
-      pending: pendingApps.length,
-      rejected: rejectedApps.length
+      totalReceived: scopedApps.length,
+      grantTotal: scopedApproved.reduce((sum, a) => sum + grantOf(a), 0),
+      equipmentAmount: scopedApps.reduce((sum, a) => sum + costOf(a), 0),
+      approved: scopedApproved.length,
+      pending: scopedPending.length,
+      rejected: scopedRejected.length
     };
   }, [apps]);
 
   const divisionData = useMemo(() => {
+    const scoped = filterAssignedDivision(apps);
     const source = chartScope === 'approved'
-      ? apps.filter(a => APPROVED_STATUSES.includes(a.status))
-      : apps;
+      ? scoped.filter(a => APPROVED_STATUSES.includes(a.status))
+      : scoped;
 
     const map = {};
     source.forEach(app => {
-      const div = app.division || 'Unassigned';
+      const div = app.division;
       if (!map[div]) map[div] = { division: div, amount: 0, count: 0 };
       map[div].amount += Number(app.equipment?.totalGrant || 0);
       map[div].count += 1;
@@ -119,7 +128,7 @@ function AdminDashboard({ language = 'en' }) {
 
   const doStats = useMemo(() => {
     const map = {};
-    apps.forEach(app => {
+    filterAssignedDivision(apps).forEach(app => {
       const key = app.officer?.uid || app.officer?.email || 'unknown';
       if (!map[key]) {
         map[key] = {
@@ -164,9 +173,10 @@ function AdminDashboard({ language = 'en' }) {
   }), { entered: 0, approvedCount: 0, approvedAmount: 0, rejectedCount: 0, rejectedAmount: 0, equipmentValue: 0 }), [doStats]);
 
   const gsBreakdown = useMemo(() => {
+    const scoped = filterAssignedDivision(apps);
     const source = gsScope === 'approved'
-      ? apps.filter(a => APPROVED_STATUSES.includes(a.status))
-      : apps;
+      ? scoped.filter(a => APPROVED_STATUSES.includes(a.status))
+      : scoped;
 
     const map = {};
     source.forEach(app => {

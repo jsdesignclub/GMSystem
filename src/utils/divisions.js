@@ -12,6 +12,19 @@ export const dsDivisions = {
   ]
 };
 
+// Applications submitted before a DO account was mapped to a sector (and any record
+// saved without the field) carry no usable division and are rendered as "General".
+// They are not real, sector-owned applications, so admin views must exclude them
+// instead of filing them under a catch-all bucket that misleads staff.
+export function isUnassignedDivision(app) {
+  const division = typeof app?.division === 'string' ? app.division.trim() : '';
+  return !division || division.toLowerCase() === 'general';
+}
+
+export function filterAssignedDivision(apps) {
+  return (apps || []).filter(app => !isUnassignedDivision(app));
+}
+
 export const gsDivisionsData = {
   Badulla: ['Andeniya','Badulla Central','Badulla East','Badulla North','Badulla South','Badulla West','Badulupitiya','Damanwara','Glen Alpin','Hegoda','Hindagoda','Hingurugamuwa','Hinnarangolla','Ilukthenna','Kailagoda','Kanupelella','Katupelella','Kendagolla','Malangamuwa','Medapathana','Pitawelagama','Rambukpotha','Sirimalgoda','Thelbedda Estate','Udawela','Vineethagama','Viyadiguna','Welibissa','Wewessa'],
   Bandarawela: ['Ambadandegama','Ambegoda','Bambaragama','Bandarawela East','Bandarawela West','Beddearawa','Beddekumbura','Bindunuwewa','Creig Watta','Darahitawanagoda','Diganathenna','Dulgolla','Egodagama','Etthalapitiya','Gediyaroda','Icelab Watta','Inikambedda','Karagahawela','Kebillawela North','Kebillawela South','Kinigama','Kirioruwa','Konthahela','Liyangahawela','Liyangahawela Watta','Mahaulpatha','Makulella','Mathetilla','Nayabedda Estate','Obadella','Thanthiriya','Udaperuwa','Watagamuwa','Weheragalathenna','Wewathenna'],
