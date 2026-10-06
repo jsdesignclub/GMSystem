@@ -4,7 +4,7 @@ import { collection, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc,
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { UserPlus, Shield, MapPin, Search, Trash2, Mail, X, CheckCircle, Settings, Eye, FileText, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save, Plus, FileSpreadsheet } from 'lucide-react';
+import { Download, Filter, List, Package, ChevronDown, FolderPlus, Layers, Save, Plus, FileSpreadsheet, Users } from 'lucide-react';
 import { calculateScore } from '../utils/calculateScore';
 import { normalizeGsName } from '../utils/gsName';
 import { exportCSV as downloadCSV, exportTablePDF } from '../utils/exportUtils';
@@ -102,6 +102,7 @@ function AdminModule({ activeTab: externalTab }) {
   const [divisionFilter, setDivisionFilter] = useState('all');
   const [equipmentFilter, setEquipmentFilter] = useState('all');
   const [scoreRangeFilter, setScoreRangeFilter] = useState('all');
+  const [spouseGovFilter, setSpouseGovFilter] = useState('all');
   const [scoreSort, setScoreSort] = useState('desc'); 
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -269,7 +270,10 @@ function AdminModule({ activeTab: externalTab }) {
         else if (scoreRangeFilter.startsWith('le')) matchesScore = score <= threshold;
       }
 
-      return matchesSearch && matchesDivision && matchesEquipment && matchesScore;
+      const spouseGov = (app.personal?.govService || 'no') === 'yes' ? 'yes' : 'no';
+      const matchesSpouseGov = spouseGovFilter === 'all' || spouseGov === spouseGovFilter;
+
+      return matchesSearch && matchesDivision && matchesEquipment && matchesScore && matchesSpouseGov;
     });
 
     // Apply Sorting
@@ -787,7 +791,7 @@ function AdminModule({ activeTab: externalTab }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordSearch, divisionFilter, equipmentFilter, scoreRangeFilter, scoreSort, pageSize, activeSubTab]);
+  }, [recordSearch, divisionFilter, equipmentFilter, scoreRangeFilter, spouseGovFilter, scoreSort, pageSize, activeSubTab]);
 
 
   // Sync with external sidebar tab
@@ -1925,10 +1929,23 @@ function AdminModule({ activeTab: externalTab }) {
                    <option value="le90">90 & Below</option>
                    <option value="le95">95 & Below</option>
                    <option value="le100">100 & Below</option>
-                 </select>
-               </div>
+                  </select>
+                </div>
 
-               <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '0.4rem 1.5rem', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: '230px' }}>
+                  <Users size={18} color="#94a3b8" />
+                  <select 
+                    value={spouseGovFilter} 
+                    onChange={e => setSpouseGovFilter(e.target.value)}
+                    style={{ ...selectStyle, width: '100%', height: '45px' }}
+                  >
+                    <option value="all">All Spouse Gov Service</option>
+                    <option value="yes">Spouse in Gov Service: Yes</option>
+                    <option value="no">Spouse in Gov Service: No</option>
+                  </select>
+                </div>
+
+                <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '0.4rem 1.5rem', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center' }}>
                  {getFilteredRecords().length} APPLICATIONS
                </div>
             </div>
@@ -1951,6 +1968,7 @@ function AdminModule({ activeTab: externalTab }) {
                   <th style={thStyle}>Trade License No</th>
                   <th style={thStyle}>NID</th>
                   <th style={thStyle}>Division</th>
+                  <th style={thStyle}>Spouse on Gov Service</th>
                   <th style={thStyle}>Equipment</th>
                   <th style={thStyle}>Model No</th>
                   <th style={thStyle}>Brand</th>
@@ -1982,6 +2000,28 @@ function AdminModule({ activeTab: externalTab }) {
                       <td style={tdStyle}>{app.business?.licenseNo || '-'}</td>
                       <td style={tdStyle}>{app.personal?.nic || '-'}</td>
                       <td style={tdStyle}>{app.division || 'General'}</td>
+                      <td style={tdStyle}>
+                        {(() => {
+                          const inGov = (app.personal?.govService || 'no') === 'yes';
+                          return (
+                            <div style={{ 
+                              padding: '4px 10px', 
+                              borderRadius: '20px', 
+                              fontSize: '0.65rem', 
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              display: 'inline-block',
+                              minWidth: '45px',
+                              background: inGov ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              color: inGov ? '#f59e0b' : '#10b981',
+                              border: `1px solid ${inGov ? '#f59e0b' : '#10b981'}`,
+                              textTransform: 'uppercase'
+                            }}>
+                              {inGov ? 'Yes' : 'No'}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td style={tdStyle}>{firstItem.name || 'N/A'}</td>
                       <td style={tdStyle}>{firstItem.model || '-'}</td>
                       <td style={tdStyle}>{firstItem.brand || '-'}</td>
@@ -2037,7 +2077,7 @@ function AdminModule({ activeTab: externalTab }) {
               {filteredRecords.length > 0 && (
                 <tfoot>
                   <tr style={{ background: 'rgba(16, 185, 129, 0.06)', borderTop: '2px solid rgba(16, 185, 129, 0.25)' }}>
-                    <td colSpan={14} style={{ ...tdStyle, fontWeight: 800, color: '#10b981', textAlign: 'right', fontSize: '0.9rem' }}>
+                    <td colSpan={15} style={{ ...tdStyle, fontWeight: 800, color: '#10b981', textAlign: 'right', fontSize: '0.9rem' }}>
                       TOTAL ({totals.count} Applications)
                     </td>
                     <td style={{ ...tdStyle, fontWeight: 800, color: '#fff', fontSize: '0.9rem' }}>LKR {totals.totalCost.toLocaleString()}</td>
