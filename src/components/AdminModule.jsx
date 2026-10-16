@@ -150,7 +150,7 @@ function AdminModule({ activeTab: externalTab }) {
         equip.brand || '',
         app.status === 'approved' ? 'Authorized' : app.status,
         app.score || 0,
-        app.equipment?.totalGrant * 2 || 0,
+        getTotalCost(app),
         app.equipment?.totalGrant || 0,
         isPaid(app) ? (app.equipment?.totalGrant || 0) : 'Pending'
       ];
@@ -200,7 +200,7 @@ function AdminModule({ activeTab: externalTab }) {
         equip.brand || "-",
         equip.model || "-",
         (app.score || 0).toString(),
-        (app.equipment?.totalGrant * 2 || 0).toLocaleString(),
+        getTotalCost(app).toLocaleString(),
         (app.equipment?.totalGrant || 0).toLocaleString(),
         isPaid(app) ? `LKR ${(app.equipment?.totalGrant || 0).toLocaleString()}` : 'Pending'
       ];
@@ -299,12 +299,14 @@ function AdminModule({ activeTab: externalTab }) {
 
   const isPaid = (app) => app.status === 'completed' || app.procurementUpdate?.phase === 'Payment Disbursed';
 
+  const getTotalCost = (app) => (app.equipment?.items || []).reduce((sum, i) => sum + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
+
   const exportSet = selectedIds.length > 0
     ? filteredRecords.filter(app => selectedIds.includes(app.id))
     : filteredRecords;
   const totals = {
     count: exportSet.length,
-    totalCost: exportSet.reduce((sum, app) => sum + (app.equipment?.totalGrant * 2 || 0), 0),
+    totalCost: exportSet.reduce((sum, app) => sum + getTotalCost(app), 0),
     totalGrant: exportSet.reduce((sum, app) => sum + (app.equipment?.totalGrant || 0), 0),
     totalPaid: exportSet.reduce((sum, app) => sum + (isPaid(app) ? (app.equipment?.totalGrant || 0) : 0), 0)
   };
@@ -1667,7 +1669,7 @@ function AdminModule({ activeTab: externalTab }) {
                       {groupApplications.map((app, idx) => {
                         const items = groupItemsOf(app);
                         const granted = app.score || 0;
-                        const cost = (app.equipment?.totalGrant || 0) * 2;
+                        const cost = getTotalCost(app);
                         const grant = app.equipment?.totalGrant || 0;
                         const dispatched = !!app.adminDispatch;
                         const checked = groupSelectedIds.includes(app.id);
@@ -1726,7 +1728,7 @@ function AdminModule({ activeTab: externalTab }) {
                   {groupApplications.map((app, idx) => {
                     const items = groupItemsOf(app);
                     const granted = app.score || 0;
-                    const cost = (app.equipment?.totalGrant || 0) * 2;
+                    const cost = getTotalCost(app);
                     const grant = app.equipment?.totalGrant || 0;
                     const dispatched = !!app.adminDispatch;
                     const checked = groupSelectedIds.includes(app.id);
@@ -2043,7 +2045,7 @@ function AdminModule({ activeTab: externalTab }) {
                       <td style={tdStyle}>
                         <span style={{ fontWeight: 800, color: '#10b981' }}>{app.score}</span>
                       </td>
-                      <td style={tdStyle}>LKR {(app.equipment?.totalGrant * 2 || 0).toLocaleString()}</td>
+                      <td style={tdStyle}>LKR {getTotalCost(app).toLocaleString()}</td>
                       <td style={tdStyle}><div style={{ fontWeight: 800, color: '#10b981' }}>LKR {(app.equipment?.totalGrant || 0).toLocaleString()}</div></td>
                       <td style={tdStyle}>
                         {isPaid(app) ? (

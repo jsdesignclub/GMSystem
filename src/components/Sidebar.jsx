@@ -18,12 +18,16 @@ import {
   Shield,
   PanelLeftClose,
   PanelLeftOpen,
-  Package
+  Package,
+  GraduationCap,
+  Wrench,
+  Building2,
+  Lightbulb
 } from 'lucide-react';
 
 function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole, language = 'en', isCollapsed, onToggleCollapse }) {
   const normalizedRole = userRole?.toLowerCase();
-  const [expandedItems, setExpandedItems] = useState(['applications', 'approvals', 'final-actions', 'procurement']);
+  const [expandedItems, setExpandedItems] = useState(['applications', 'approvals', 'final-actions', 'procurement', 'projects']);
   
   // Dynamic menu based on role
   const menuItems = normalizedRole === 'divisional_secretary' ? [
@@ -95,6 +99,18 @@ function Sidebar({ activeTab, setActiveTab, onLogout, isOpen, onClose, userRole,
       icon: <CheckCircle size={20} />,
       subItems: [
         { id: 'gs-approval-queue', title: getTranslation('sidebar.gnApprovalQueue', language), icon: <Clock size={16} /> }
+      ]
+    },
+    {
+      id: 'projects',
+      title: getTranslation('sidebar.projects', language),
+      icon: <Briefcase size={20} />,
+      subItems: [
+        { id: 'project-training', title: getTranslation('sidebar.trainingProgrammes', language), icon: <GraduationCap size={16} /> },
+        { id: 'project-maintenance', title: getTranslation('sidebar.projectMaintenance', language), icon: <Wrench size={16} /> },
+        { id: 'project-building', title: getTranslation('sidebar.projectBuilding', language), icon: <Building2 size={16} /> },
+        { id: 'project-goods', title: getTranslation('sidebar.projectGoods', language), icon: <Package size={16} /> },
+        { id: 'project-other', title: getTranslation('sidebar.projectOther', language), icon: <Lightbulb size={16} /> }
       ]
     },
     { id: 'settings', title: getTranslation('sidebar.settings', language), icon: <Settings size={20} /> }

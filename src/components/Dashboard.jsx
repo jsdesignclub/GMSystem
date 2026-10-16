@@ -6,6 +6,9 @@ import { auth } from '../firebase';
 import DOModule from './DO/DOModule';
 import DODashboard from './DO/DODashboard';
 import ApplicationsList from './DO/ApplicationsList';
+import ProjectTrainingForm from './DO/ProjectTrainingForm';
+import ProjectAnnexureForm from './DO/ProjectAnnexureForm';
+import { getAnnexureById } from '../utils/projectAnnexures';
 import DSModule from './DSModule';
 import GSModule from './GSModule';
 import GSSetup from './GSSetup';
@@ -77,6 +80,15 @@ function Dashboard({ language = 'en', setLanguage }) {
       case 'dispatch':
       case 'equipment-group':
         return <AdminModule activeTab={activeTab} />;
+      case 'project-training':
+        return <ProjectTrainingForm language={language} />;
+      case 'project-maintenance':
+      case 'project-building':
+      case 'project-goods':
+      case 'project-other': {
+        const annexure = getAnnexureById(activeTab);
+        return <ProjectAnnexureForm annexure={annexure} language={language} />;
+      }
       case 'new-app':
         return <DOModule initialData={editingApp} onComplete={() => setEditingApp(null)} language={language} />;
       case 'pending-app':

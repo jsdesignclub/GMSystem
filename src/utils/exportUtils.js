@@ -32,7 +32,7 @@ export function exportCSV({ filename, headers, rows }) {
   URL.revokeObjectURL(url);
 }
 
-export async function exportTablePDF({ title, subtitle, columns, rows, foot, filename, orientation = 'landscape', format = 'a3' }) {
+export async function exportTablePDF({ title, subtitle, columns, rows, foot, filename, orientation = 'landscape', format = 'a3', signature }) {
   const head = columns.map((c) => `<th>${esc(c)}</th>`).join('');
   const body = rows
     .map(
@@ -44,6 +44,7 @@ export async function exportTablePDF({ title, subtitle, columns, rows, foot, fil
     ? `<tfoot><tr>${foot.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr></tfoot>`
     : '';
   const footer = `Generated: ${new Date().toLocaleString()} | Records: ${rows.length}`;
+  const signatureHtml = signature ? `<p class="signature">${esc(signature)}</p>` : '';
 
   const C = document.createElement('div');
   C.innerHTML = `
@@ -59,12 +60,14 @@ export async function exportTablePDF({ title, subtitle, columns, rows, foot, fil
       .expdf tr:nth-child(even) td { background: #f7fafc; }
       .expdf tfoot td { background: #e2e8f0; font-weight: 700; }
       .expdf .footer { margin-top: 12px; font-size: 11px; color: #718096; }
+      .expdf .signature { margin: 32px 0 0; font-size: 14px; font-weight: 700; color: #1a202c; }
     </style>
     <div class="expdf">
       <h1>${esc(title)}</h1>
       <p class="sub">${esc(subtitle)}</p>
       <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${footHtml}</table>
       <p class="footer">${esc(footer)}</p>
+      ${signatureHtml}
     </div>
   `;
   C.style.cssText = 'position:fixed;top:0;left:-10000px;width:1600px;z-index:9999;background:#fff;';

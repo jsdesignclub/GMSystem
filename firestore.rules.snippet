@@ -72,5 +72,10 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if request.auth != null && isAdmin();
     }
+
+    // --- ADDED: 2027 development project proposals (DO > Projects > Training)
+    match /development_projects/{docId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
